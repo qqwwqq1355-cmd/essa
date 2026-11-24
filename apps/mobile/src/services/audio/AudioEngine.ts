@@ -14,10 +14,21 @@ export interface AudioCallbacks {
  * - على Chrome / Web: HTML5 Audio (بث متدرج فوري) + MediaSession API
  * - عند بناء APK للأندرويد لاحقاً: تُستبدل بـ react-native-track-player دون تعديل الواجهة
  */
+interface NativeAndroidBridge {
+  onPlaybackStateChanged?: (isPlaying: boolean, title: string) => void;
+  saveBase64Png?: (dataUrl: string, fileName: string) => void;
+}
+
+function getAndroidBridge(): NativeAndroidBridge | undefined {
+  if (typeof window === 'undefined') return undefined;
+  return (window as unknown as { AndroidBridge?: NativeAndroidBridge }).AndroidBridge;
+}
+
 class WebAudioEngine {
   private audio: HTMLAudioElement;
   private callbacks: AudioCallbacks | null = null;
   private currentTrackId: string | null = null;
+  private currentTrackTitle = 'مكتبة عيسى الليث';
 
   constructor() {
     this.audio = new Audio();
@@ -36,10 +47,12 @@ class WebAudioEngine {
 
     this.audio.addEventListener('playing', () => {
       this.callbacks?.onPlayStateChange(true, false);
+      getAndroidBridge()?.onPlaybackStateChanged?.(true, this.currentTrackTitle);
     });
 
     this.audio.addEventListener('pause', () => {
       this.callbacks?.onPlayStateChange(false, false);
+      getAndroidBridge()?.onPlaybackStateChanged?.(false, this.currentTrackTitle);
     });
 
     this.audio.addEventListener('waiting', () => {
@@ -111,6 +124,7 @@ class WebAudioEngine {
     }
 
     this.currentTrackId = track.id;
+    this.currentTrackTitle = track.title;
     this.callbacks?.onPlayStateChange(false, true);
 
     if (this.audio.src !== track.streamUrl) {

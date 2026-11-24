@@ -16,10 +16,13 @@ build/
 .vite/
 *.tsbuildinfo
 
-# Mobile Native builds (future APK/AAB)
+# Mobile Native builds & Signing Keys (NEVER commit keystore or passwords!)
 apps/mobile/android/app/build/
 apps/mobile/android/.gradle/
 apps/mobile/android/local.properties
+apps/mobile/android/keystore/
+apps/mobile/android/app/src/main/assets/www/
+keystore.properties
 *.keystore
 *.jks
 *.apk

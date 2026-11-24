@@ -107,9 +107,23 @@ export const LyricsCardModal: React.FC<LyricsCardModalProps> = ({ theme }) => {
     ctx.font = '500 28px "IBM Plex Sans Arabic", sans-serif';
     ctx.fillText('عيسى الليث  •  @IssaAllaith', 540, 1222);
 
+    const dataUrl = canvas.toDataURL('image/png');
+    const fileName = `issa-allaith-${track.sourceMessageId}.png`;
+    const androidBridge = (
+      window as unknown as {
+        AndroidBridge?: { saveBase64Png?: (url: string, name: string) => void };
+      }
+    ).AndroidBridge;
+
+    if (androidBridge?.saveBase64Png) {
+      androidBridge.saveBase64Png(dataUrl, fileName);
+      showToast('تم حفظ بطاقة الأبيات في معرض الهاتف', 'success');
+      return;
+    }
+
     const link = document.createElement('a');
-    link.download = `issa-allaith-${track.sourceMessageId}.png`;
-    link.href = canvas.toDataURL('image/png');
+    link.download = fileName;
+    link.href = dataUrl;
     link.click();
     showToast('تم حفظ بطاقة الأبيات بجودة عالية (PNG)', 'success');
   };

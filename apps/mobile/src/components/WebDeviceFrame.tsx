@@ -41,7 +41,10 @@ export const WebDeviceFrame: React.FC<WebDeviceFrameProps> = ({
     return () => window.removeEventListener('resize', onResize);
   }, []);
 
-  const isNativeViewport = winWidth <= 540 || preset === 'full';
+  const isAndroidNativeApp =
+    typeof window !== 'undefined' &&
+    Boolean((window as unknown as { AndroidBridge?: unknown }).AndroidBridge);
+  const isNativeViewport = isAndroidNativeApp || winWidth <= 540 || preset === 'full';
 
   if (isNativeViewport) {
     return (
