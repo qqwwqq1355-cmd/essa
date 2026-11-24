@@ -20,12 +20,12 @@ permissions:
 
 concurrency:
   group: telegram-sync-issa-allaith
-  cancel-in-progress: true
+  cancel-in-progress: false
 
 jobs:
   sync:
     runs-on: ubuntu-latest
-    timeout-minutes: 55
+    timeout-minutes: 180
     steps:
       - name: Checkout Repository
         uses: actions/checkout@v4
