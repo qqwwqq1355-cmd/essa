@@ -1,6 +1,6 @@
 # مكتبة عيسى الليث — Issa Al-Laith Audio & Lyrics App
 
-> **تطبيق هواتف ذكية (React Native) عالي الأداء، خفيف وسريع، بمعمارية حديثة قابلة للاستخدام التجاري — يوفّر مكتبة صوتية متكاملة (MP3) مع الكلمات (Lyrics)، مزوّدة بمحرك أتمتة كامل لسحب وفهرسة المقاطع تلقائياً من القناة العامة الرسمية على تليجرام [`t.me/IssaAllaith`](https://t.me/IssaAllaith) دون الحاجة لشراء سيرفر تقليدي.**
+> **تطبيق هوااتف ذكية (React Native) عالي الأداء، خفيف وسريع، بمعمارية حديثة قابلة للاستخدام التجاري — يوفّر مكتبة صوتية متكاملة (MP3) مع الكلمات (Lyrics)، مزوّدة بمحرك أتمتة كامل لسحب وفهرسة المقاطع تلقائياً من القناة العامة الرسمية على تليجرام [`t.me/IssaAllaith`](https://t.me/IssaAllaith) دون الحاجة لشراء سيرفر تقليدي.**
 
 ![Platform](https://img.shields.io/badge/Platform-Android%207.0%2B%20(API%2024--35)%20%7C%20iOS-3DDC84?style=flat-square&logo=android)
 ![Framework](https://img.shields.io/badge/React%20Native-New%20Architecture%20%2B%20Hermes-61DAFB?style=flat-square&logo=react)
