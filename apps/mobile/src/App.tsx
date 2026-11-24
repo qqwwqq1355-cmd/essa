@@ -24,6 +24,7 @@ export const App: React.FC = () => {
     tracks,
     currentTrackId,
     isPlaying,
+    isBuffering,
     positionSec,
     durationSec,
     favorites,
@@ -36,11 +37,10 @@ export const App: React.FC = () => {
     syncWithTelegramApi,
   } = useAppStore();
 
-  // مزامنة تلقائية فور فتح التطبيق عند وجود رابط Cloudflare Edge API
+  // مزامنة تلقائية فور فتح التطبيق (بصمت إذا كانت المكتبة مخبأة محلياً)
   useEffect(() => {
-    if (apiBaseUrl) {
-      void syncWithTelegramApi(apiBaseUrl);
-    }
+    const hasCached = tracks.length > 0;
+    void syncWithTelegramApi(apiBaseUrl, hasCached);
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
@@ -72,6 +72,7 @@ export const App: React.FC = () => {
             track={currentTrack}
             theme={theme}
             isPlaying={isPlaying}
+            isBuffering={isBuffering}
             positionSec={positionSec}
             durationSec={durationSec || currentTrack.durationSec}
             isFavorite={favorites.includes(currentTrack.id)}

@@ -138,12 +138,16 @@ async function processBatch(
     let telegramFileId: string | null = null;
     let telegramArchiveMsgId: number | null = null;
     let audioObjectUrl: string | null = null;
+    let finalFileSizeBytes = audio.fileSizeBytes;
 
     if (config.storageMode === 'github' && githubStore) {
       const uploaded = await withFloodWaitRetry(`github-upload #${msg.id}`, () =>
         githubStore.uploadFromTelegramMessage(client, msg, audio.mimeType)
       );
       audioObjectUrl = uploaded.audioUrl;
+      if (uploaded.sizeBytes > 0) {
+        finalFileSizeBytes = uploaded.sizeBytes;
+      }
     } else if (archivePeer) {
       const archived = await withFloodWaitRetry(`mirror #${msg.id}`, () =>
         mirrorAudioToPrivateChannel(
@@ -171,8 +175,8 @@ async function processBatch(
       poetNormalized: normalizeArabic(parsed.poet),
       category: parsed.category,
       durationSec: audio.durationSec,
-      fileSizeBytes: audio.fileSizeBytes,
-      mimeType: audio.mimeType,
+      fileSizeBytes: finalFileSizeBytes,
+      mimeType: config.storageMode === 'github' ? 'audio/mpeg' : audio.mimeType,
       storageProvider: config.storageMode,
       telegramFileId,
       telegramArchiveMsgId,
@@ -228,9 +232,11 @@ async function main() {
     }
 
     const channelEntity = await client.getEntity(config.sourceChannelUsername);
+    const releasePrefix = config.githubReleaseTag.replace(/-v\d+$/, '') || 'audio-opt';
     const existingIds = await db.getExistingSourceMessageIds(
       config.sourceChannelUsername,
-      config.storageMode
+      config.storageMode,
+      releasePrefix
     );
 
     console.log(

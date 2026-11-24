@@ -1,5 +1,4 @@
 import type { Track } from '@shared/types/track';
-import { getOrCreatePreviewAudioUrl } from './previewAudioSynth';
 
 export interface AudioCallbacks {
   onTimeUpdate: (positionSec: number, durationSec: number) => void;
@@ -12,8 +11,8 @@ export interface AudioCallbacks {
 
 /**
  * طبقة تجريد محرك الصوت (Audio Abstraction Layer)
- * - على الويب / Chrome: تستخدم HTML5 Audio + MediaSession API (التحكم من نظام التشغيل وكروم)
- * - عند البناء للأندرويد APK لاحقاً: تُستبدل بـ react-native-track-player دون تعديل واجهة التطبيق
+ * - على Chrome / Web: HTML5 Audio (بث متدرج فوري) + MediaSession API
+ * - عند بناء APK للأندرويد لاحقاً: تُستبدل بـ react-native-track-player دون تعديل الواجهة
  */
 class WebAudioEngine {
   private audio: HTMLAudioElement;
@@ -22,13 +21,17 @@ class WebAudioEngine {
 
   constructor() {
     this.audio = new Audio();
-    this.audio.preload = 'metadata';
+    this.audio.preload = 'auto';
 
     this.audio.addEventListener('timeupdate', () => {
       this.callbacks?.onTimeUpdate(
         this.audio.currentTime || 0,
         Number.isFinite(this.audio.duration) ? this.audio.duration : 0
       );
+    });
+
+    this.audio.addEventListener('loadstart', () => {
+      this.callbacks?.onPlayStateChange(false, true);
     });
 
     this.audio.addEventListener('playing', () => {
@@ -40,7 +43,7 @@ class WebAudioEngine {
     });
 
     this.audio.addEventListener('waiting', () => {
-      this.callbacks?.onPlayStateChange(!this.audio.paused, true);
+      this.callbacks?.onPlayStateChange(false, true);
     });
 
     this.audio.addEventListener('canplay', () => {
@@ -54,7 +57,7 @@ class WebAudioEngine {
 
     this.audio.addEventListener('error', () => {
       this.callbacks?.onPlayStateChange(false, false);
-      this.callbacks?.onError('تعذّر تحميل الملف الصوتي. تحقّق من الاتصال أو رابط البث.');
+      this.callbacks?.onError('تعذّر تشغيل هذا المقطع حالياً — ربما ما زال قيد التحسين في السحابة، جرّب مقطعاً آخر أو أعد المحاولة بعد لحظة.');
     });
   }
 
@@ -84,7 +87,7 @@ class WebAudioEngine {
         }
       });
     } catch {
-      // بعض المتصفحات لا تدعم كل الإجراءات
+      // تجاهل
     }
   }
 
@@ -102,17 +105,16 @@ class WebAudioEngine {
   }
 
   async loadAndPlay(track: Track, startPositionSec = 0, playbackRate = 1): Promise<void> {
-    const src =
-      track.streamUrl && track.storageProvider !== 'preview'
-        ? track.streamUrl
-        : getOrCreatePreviewAudioUrl(track.id, track.durationSec, track.sourceMessageId);
+    if (!track.streamUrl) {
+      this.callbacks?.onError('رابط البث غير متوفر لهذا المقطع بعد.');
+      return;
+    }
 
     this.currentTrackId = track.id;
     this.callbacks?.onPlayStateChange(false, true);
 
-    if (this.audio.src !== src) {
-      this.audio.src = src;
-      this.audio.load();
+    if (this.audio.src !== track.streamUrl) {
+      this.audio.src = track.streamUrl;
     }
 
     this.audio.playbackRate = playbackRate;
@@ -131,7 +133,6 @@ class WebAudioEngine {
     try {
       await this.audio.play();
     } catch {
-      // في حال منع المتصفح التشغيل التلقائي قبل نقرة المستخدم
       this.callbacks?.onPlayStateChange(false, false);
     }
   }
@@ -165,4 +166,3 @@ class WebAudioEngine {
 }
 
 export const audioEngine = new WebAudioEngine();
-

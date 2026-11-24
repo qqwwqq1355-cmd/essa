@@ -5,7 +5,7 @@ import { Icon } from './Icon';
 
 interface WebDeviceFrameProps {
   theme: ThemePalette;
-  connectionMode: 'preview' | 'live';
+  connectionMode: 'live' | 'offline';
   onToggleTheme: () => void;
   children: React.ReactNode;
 }
@@ -102,10 +102,10 @@ export const WebDeviceFrame: React.FC<WebDeviceFrameProps> = ({
             <Text
               style={[
                 styles.modeBadgeText,
-                { color: connectionMode === 'live' ? theme.emerald : theme.accent },
+                { color: connectionMode === 'live' ? theme.emerald : theme.danger },
               ]}
             >
-              {connectionMode === 'live' ? 'متصل بـ @IssaAllaith' : 'وضع المعاينة التفاعلي'}
+              {connectionMode === 'live' ? 'متصل بـ @IssaAllaith' : 'وضع أوفلاين'}
             </Text>
           </View>
         </View>

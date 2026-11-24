@@ -14,7 +14,7 @@ interface SearchScreenProps {
   theme: ThemePalette;
 }
 
-const SUGGESTIONS = ['الجبال', 'الفجر', 'الكرامة', 'الوفاء', 'تراث', 'اليقين', 'القوافي'];
+const SUGGESTIONS = ['اليمن', 'المندب', 'الجوف', 'الهداية', 'الثبات', 'الوعد', 'الصف'];
 
 export const SearchScreen: React.FC<SearchScreenProps> = ({ theme }) => {
   const {

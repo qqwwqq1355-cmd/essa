@@ -11,6 +11,7 @@ export interface SyncConfig {
   githubToken: string;
   githubRepository: string;
   githubReleaseTag: string;
+  audioBitrate: string;
   cloudflareAccountId: string;
   cloudflareApiToken: string;
   cloudflareD1DatabaseId: string;
@@ -43,7 +44,8 @@ export function loadConfig(): SyncConfig {
     storageMode,
     githubToken: storageMode === 'github' ? requiredEnv('GITHUB_TOKEN') : (process.env.GITHUB_TOKEN || '').trim(),
     githubRepository: (process.env.GITHUB_REPOSITORY || 'qqwwqq1355-cmd/essa').trim(),
-    githubReleaseTag: (process.env.GITHUB_RELEASE_TAG || 'audio-v1').trim(),
+    githubReleaseTag: (process.env.GITHUB_RELEASE_TAG || 'audio-opt-v1').trim(),
+    audioBitrate: (process.env.AUDIO_BITRATE || '96k').trim(),
     cloudflareAccountId: requiredEnv('CLOUDFLARE_ACCOUNT_ID'),
     cloudflareApiToken: requiredEnv('CLOUDFLARE_API_TOKEN'),
     cloudflareD1DatabaseId: requiredEnv('CLOUDFLARE_D1_DATABASE_ID'),

@@ -3,7 +3,6 @@ import type { Track, TrackCategory } from '@shared/types/track';
 import { normalizeArabic } from '@shared/arabic/normalize';
 import { getDeterministicPalette } from '@shared/arabic/lyricsParser';
 import type { ThemeMode } from '../theme/tokens';
-import { buildPreviewCatalog } from '../data/previewCatalog';
 import { audioEngine } from '../services/audio/AudioEngine';
 import { fetchDeltaSync, getDefaultApiBaseUrl } from '../services/api/syncClient';
 
@@ -32,7 +31,8 @@ export interface PersistedState {
   lastSyncAt: string | null;
 }
 
-const STORAGE_KEY = 'essa_alleth_app_state_v1';
+const STORAGE_KEY = 'essa_alleth_app_state_v2';
+const TRACKS_CACHE_KEY = 'essa_alleth_tracks_cache_v2';
 
 const DEFAULT_PERSISTED: PersistedState = {
   theme: 'dark',
@@ -41,30 +41,34 @@ const DEFAULT_PERSISTED: PersistedState = {
   notificationsEnabled: true,
   cacheLimitMb: 500,
   apiBaseUrl: getDefaultApiBaseUrl(),
-  favorites: ['preview_5412', 'preview_5395'],
-  downloadedIds: ['preview_5412'],
-  playlists: [
-    {
-      id: 'pl_favorites_mix',
-      name: 'مختاراتي المفضلة',
-      trackIds: ['preview_5412', 'preview_5408', 'preview_5395'],
-      createdAt: new Date().toISOString(),
-    },
-  ],
+  favorites: [],
+  downloadedIds: [],
+  playlists: [],
   playProgress: {},
-  recentSearches: ['الجبال', 'الفجر', 'الكرامة'],
-  lastSyncAt: new Date().toISOString(),
+  recentSearches: [],
+  lastSyncAt: null,
 };
+
+function isNotPreviewId(id: string): boolean {
+  return !id.startsWith('preview_');
+}
 
 function loadPersisted(): PersistedState {
   try {
     const raw = localStorage.getItem(STORAGE_KEY);
     if (!raw) return DEFAULT_PERSISTED;
     const parsed = JSON.parse(raw) as Partial<PersistedState>;
-    const merged = { ...DEFAULT_PERSISTED, ...parsed };
-    if (!merged.apiBaseUrl && DEFAULT_PERSISTED.apiBaseUrl) {
-      merged.apiBaseUrl = DEFAULT_PERSISTED.apiBaseUrl;
+    const merged: PersistedState = { ...DEFAULT_PERSISTED, ...parsed };
+    if (!merged.apiBaseUrl) {
+      merged.apiBaseUrl = getDefaultApiBaseUrl();
     }
+    // تنظيف أي معرفات تجريبية قديمة إن وُجدت
+    merged.favorites = (merged.favorites || []).filter(isNotPreviewId);
+    merged.downloadedIds = (merged.downloadedIds || []).filter(isNotPreviewId);
+    merged.playlists = (merged.playlists || []).map((p) => ({
+      ...p,
+      trackIds: (p.trackIds || []).filter(isNotPreviewId),
+    }));
     return merged;
   } catch {
     return DEFAULT_PERSISTED;
@@ -75,7 +79,30 @@ function savePersisted(state: PersistedState) {
   try {
     localStorage.setItem(STORAGE_KEY, JSON.stringify(state));
   } catch {
-    // تجاهل في حال امتلاء التخزين
+    // تجاهل
+  }
+}
+
+function loadCachedTracks(): Track[] {
+  try {
+    const raw = localStorage.getItem(TRACKS_CACHE_KEY);
+    if (!raw) return [];
+    const parsed = JSON.parse(raw) as Track[];
+    if (!Array.isArray(parsed)) return [];
+    return parsed.filter((t) => t && !t.isDemoPreview && isNotPreviewId(t.id));
+  } catch {
+    return [];
+  }
+}
+
+function saveCachedTracks(tracks: Track[]) {
+  try {
+    const realOnly = tracks.filter(
+      (t) => !t.isDemoPreview && t.storageProvider !== 'local' && isNotPreviewId(t.id)
+    );
+    localStorage.setItem(TRACKS_CACHE_KEY, JSON.stringify(realOnly));
+  } catch {
+    // تجاهل في حال تجاوز سعة localStorage
   }
 }
 
@@ -86,17 +113,14 @@ export interface ToastMessage {
 }
 
 interface AppState extends PersistedState {
-  // التصفح
   activeTab: ActiveTab;
   selectedCategory: TrackCategory | 'الكل';
 
-  // المكتبة والمزامنة
   tracks: Track[];
   isSyncing: boolean;
-  connectionMode: 'preview' | 'live';
+  connectionMode: 'live' | 'offline';
   syncError: string | null;
 
-  // حالة المشغّل الصوتي
   currentTrackId: string | null;
   queueIds: string[];
   isPlaying: boolean;
@@ -108,7 +132,6 @@ interface AppState extends PersistedState {
   repeatMode: RepeatMode;
   sleepTimerEndsAt: number | null;
 
-  // نوافذ ومنبثقات
   isPlayerOpen: boolean;
   playerInitialTab: 'player' | 'lyrics' | 'queue';
   lyricsShareTrackId: string | null;
@@ -116,7 +139,6 @@ interface AppState extends PersistedState {
   downloadingIds: Record<string, number>;
   toast: ToastMessage | null;
 
-  // إجراءات التصفح والمظهر
   setActiveTab: (tab: ActiveTab) => void;
   setSelectedCategory: (cat: TrackCategory | 'الكل') => void;
   toggleTheme: () => void;
@@ -126,7 +148,6 @@ interface AppState extends PersistedState {
   setCacheLimitMb: (mb: number) => void;
   setApiBaseUrl: (url: string) => void;
 
-  // إجراءات المشغّل
   playTrack: (trackId: string, queueOverride?: string[], openTab?: 'player' | 'lyrics') => Promise<void>;
   togglePlayPause: () => Promise<void>;
   playNext: () => Promise<void>;
@@ -140,7 +161,6 @@ interface AppState extends PersistedState {
   openPlayer: (tab?: 'player' | 'lyrics' | 'queue') => void;
   closePlayer: () => void;
 
-  // المفضلة والتحميل وقوائم التشغيل والبحث
   toggleFavorite: (trackId: string) => void;
   downloadTrack: (trackId: string) => void;
   removeDownload: (trackId: string) => void;
@@ -151,20 +171,18 @@ interface AppState extends PersistedState {
   addRecentSearch: (query: string) => void;
   clearRecentSearches: () => void;
 
-  // نوافذ مشاركة الكلمات وقوائم التشغيل
   openLyricsShare: (trackId: string) => void;
   closeLyricsShare: () => void;
   openPlaylistPicker: (trackId: string) => void;
   closePlaylistPicker: () => void;
 
-  // المزامنة واستيراد MP3 محلي للتجربة
-  syncWithTelegramApi: (customBaseUrl?: string) => Promise<void>;
+  syncWithTelegramApi: (customBaseUrl?: string, silent?: boolean) => Promise<void>;
   importLocalAudioFile: (file: File, customLyrics?: string) => void;
   showToast: (text: string, tone?: ToastMessage['tone']) => void;
 }
 
 const initialPersisted = loadPersisted();
-const initialTracks = buildPreviewCatalog();
+const initialTracks = loadCachedTracks();
 
 function persistFromState(s: AppState) {
   savePersisted({
@@ -187,7 +205,6 @@ let toastTimer: ReturnType<typeof setTimeout> | null = null;
 let sleepCheckTimer: ReturnType<typeof setInterval> | null = null;
 
 export const useAppStore = create<AppState>((set, get) => {
-  // ربط أحداث محرك الصوت بالـ Store
   audioEngine.bindCallbacks({
     onTimeUpdate: (pos, dur) => {
       const state = get();
@@ -196,7 +213,6 @@ export const useAppStore = create<AppState>((set, get) => {
         positionSec: pos,
         durationSec: dur > 0 ? dur : state.durationSec,
       };
-      // حفظ التقدم كل 5 ثوانٍ تقريباً لاستئناف الاستماع
       if (trackId && Math.floor(pos) % 5 === 0 && pos > 2) {
         updates.playProgress = { ...state.playProgress, [trackId]: Math.floor(pos) };
       }
@@ -225,7 +241,6 @@ export const useAppStore = create<AppState>((set, get) => {
     },
   });
 
-  // مراقبة مؤقت النوم
   if (typeof window !== 'undefined' && !sleepCheckTimer) {
     sleepCheckTimer = setInterval(() => {
       const state = get();
@@ -242,8 +257,8 @@ export const useAppStore = create<AppState>((set, get) => {
     activeTab: 'home',
     selectedCategory: 'الكل',
     tracks: initialTracks,
-    isSyncing: false,
-    connectionMode: initialPersisted.apiBaseUrl ? 'live' : 'preview',
+    isSyncing: initialTracks.length === 0,
+    connectionMode: 'live',
     syncError: null,
 
     currentTrackId: initialTracks[0]?.id ?? null,
@@ -270,8 +285,7 @@ export const useAppStore = create<AppState>((set, get) => {
     toggleTheme: () => {
       set((s) => {
         const next: ThemeMode = s.theme === 'dark' ? 'light' : 'dark';
-        const updated = { ...s, theme: next };
-        persistFromState(updated);
+        persistFromState({ ...s, theme: next });
         return { theme: next };
       });
     },
@@ -279,8 +293,7 @@ export const useAppStore = create<AppState>((set, get) => {
     setLyricsFontSize: (lyricsFontSize) => {
       const clamped = Math.min(30, Math.max(15, lyricsFontSize));
       set((s) => {
-        const updated = { ...s, lyricsFontSize: clamped };
-        persistFromState(updated);
+        persistFromState({ ...s, lyricsFontSize: clamped });
         return { lyricsFontSize: clamped };
       });
     },
@@ -309,10 +322,10 @@ export const useAppStore = create<AppState>((set, get) => {
     },
 
     setApiBaseUrl: (apiBaseUrl) => {
-      const cleaned = apiBaseUrl.trim().replace(/\/+$/, '');
+      const cleaned = apiBaseUrl.trim().replace(/\/+$/, '') || getDefaultApiBaseUrl();
       set((s) => {
         persistFromState({ ...s, apiBaseUrl: cleaned });
-        return { apiBaseUrl: cleaned, connectionMode: cleaned ? 'live' : 'preview' };
+        return { apiBaseUrl: cleaned };
       });
     },
 
@@ -329,6 +342,8 @@ export const useAppStore = create<AppState>((set, get) => {
       set({
         currentTrackId: trackId,
         queueIds: ensuredQueue,
+        isPlaying: false,
+        isBuffering: true,
         positionSec: resumePos,
         durationSec: track.durationSec,
         isPlayerOpen: openTab ? true : state.isPlayerOpen,
@@ -423,10 +438,7 @@ export const useAppStore = create<AppState>((set, get) => {
     },
 
     toggleShuffle: () => {
-      set((s) => {
-        const next = !s.shuffle;
-        return { shuffle: next };
-      });
+      set((s) => ({ shuffle: !s.shuffle }));
       get().showToast(get().shuffle ? 'تم تفعيل التشغيل العشوائي' : 'تم إيقاف التشغيل العشوائي', 'info');
     },
 
@@ -493,7 +505,7 @@ export const useAppStore = create<AppState>((set, get) => {
             downloadingIds: { ...s.downloadingIds, [trackId]: progress },
           }));
         }
-      }, 240);
+      }, 220);
     },
 
     removeDownload: (trackId) => {
@@ -581,34 +593,34 @@ export const useAppStore = create<AppState>((set, get) => {
     openPlaylistPicker: (trackId) => set({ playlistPickerTrackId: trackId }),
     closePlaylistPicker: () => set({ playlistPickerTrackId: null }),
 
-    syncWithTelegramApi: async (customBaseUrl) => {
+    syncWithTelegramApi: async (customBaseUrl, silent = false) => {
       const state = get();
-      const targetUrl = (customBaseUrl ?? state.apiBaseUrl).trim().replace(/\/+$/, '');
+      const targetUrl = ((customBaseUrl ?? state.apiBaseUrl) || getDefaultApiBaseUrl())
+        .trim()
+        .replace(/\/+$/, '');
 
       set({ isSyncing: true, syncError: null });
-
-      if (!targetUrl) {
-        // وضع المعاينة المحلي: محاكاة تحديث سريع مع شرح واضح
-        await new Promise((r) => setTimeout(r, 650));
-        const now = new Date().toISOString();
-        set((s) => {
-          persistFromState({ ...s, lastSyncAt: now });
-          return { isSyncing: false, lastSyncAt: now, connectionMode: 'preview' };
-        });
-        get().showToast('تم تحديث مكتبة المعاينة — أضف رابط Edge API في الإعدادات للربط المباشر بـ @IssaAllaith', 'info');
-        return;
-      }
 
       try {
         const response = await fetchDeltaSync(targetUrl);
         const liveTracks = response.tracks.filter((t) => !t.isDeleted);
+        const localImported = state.tracks.filter((t) => t.storageProvider === 'local');
+        const combined = [...localImported, ...liveTracks];
         const now = response.serverTime || new Date().toISOString();
 
+        saveCachedTracks(liveTracks);
+
         set((s) => {
+          const validCurrent =
+            s.currentTrackId && combined.some((t) => t.id === s.currentTrackId)
+              ? s.currentTrackId
+              : combined[0]?.id ?? null;
+
           persistFromState({ ...s, apiBaseUrl: targetUrl, lastSyncAt: now });
           return {
-            tracks: liveTracks.length > 0 ? liveTracks : s.tracks,
-            queueIds: liveTracks.length > 0 ? liveTracks.map((t) => t.id) : s.queueIds,
+            tracks: combined,
+            currentTrackId: validCurrent,
+            queueIds: combined.map((t) => t.id),
             apiBaseUrl: targetUrl,
             lastSyncAt: now,
             connectionMode: 'live',
@@ -616,11 +628,16 @@ export const useAppStore = create<AppState>((set, get) => {
             syncError: null,
           };
         });
-        get().showToast(`تمت المزامنة بنجاح مع @${response.sourceChannel} (${liveTracks.length} مقطع)`, 'success');
+
+        if (!silent) {
+          get().showToast(`تم تحديث المكتبة من @${response.sourceChannel} (${liveTracks.length} زامل)`, 'success');
+        }
       } catch (err) {
-        const msg = err instanceof Error ? err.message : 'تعذّر الاتصال بخادم المزامنة';
-        set({ isSyncing: false, syncError: msg });
-        get().showToast(msg, 'error');
+        const msg = err instanceof Error ? err.message : 'تعذّر الاتصال بالخادم — تعمل المكتبة بالوضع المحلي';
+        set({ isSyncing: false, syncError: msg, connectionMode: 'offline' });
+        if (!silent) {
+          get().showToast(msg, 'error');
+        }
       }
     },
 
@@ -629,9 +646,7 @@ export const useAppStore = create<AppState>((set, get) => {
       const cleanTitle = file.name.replace(/\.(mp3|m4a|wav|ogg|flac)$/i, '').replace(/[_-]+/g, ' ').trim();
       const now = new Date().toISOString();
       const seed = Math.floor(Date.now() / 1000);
-      const lyricsText =
-        customLyrics?.trim() ||
-        `ملف MP3 محلي مُضاف للتجربة الفورية\nالعنوان: ${cleanTitle}\nيمكنك الاستماع والتحكم بسرعة التشغيل ومؤقت النوم بشكل كامل.`;
+      const lyricsText = customLyrics?.trim() || null;
 
       const newTrack: Track = {
         id: `local_${seed}`,
@@ -650,7 +665,7 @@ export const useAppStore = create<AppState>((set, get) => {
         palette: getDeterministicPalette(seed),
         publishedAt: now,
         updatedAt: now,
-        hasLyrics: true,
+        hasLyrics: Boolean(lyricsText),
         lyrics: lyricsText,
         lyricsNormalized: normalizeArabic(lyricsText),
         playCount: 1,
@@ -676,4 +691,3 @@ export const useAppStore = create<AppState>((set, get) => {
     },
   };
 });
-

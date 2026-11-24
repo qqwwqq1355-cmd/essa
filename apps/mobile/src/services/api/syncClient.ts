@@ -1,6 +1,9 @@
 import type { HealthResponse, SyncResponse } from '@shared/types/track';
 
-const DEFAULT_API_BASE = (import.meta.env.VITE_API_BASE_URL || '').trim().replace(/\/+$/, '');
+const FALLBACK_PRODUCTION_API = 'https://essa-alleth-edge-api.qqwwqq1355.workers.dev';
+const DEFAULT_API_BASE = (import.meta.env.VITE_API_BASE_URL || FALLBACK_PRODUCTION_API)
+  .trim()
+  .replace(/\/+$/, '');
 
 export function getDefaultApiBaseUrl(): string {
   return DEFAULT_API_BASE;
@@ -23,7 +26,6 @@ export async function fetchDeltaSync(baseUrl: string, sinceIso?: string): Promis
   let offset = 0;
   let lastMeta: SyncResponse | null = null;
 
-  // يجلب كل الصفحات تلقائياً حتى تظهر جميع ملفات MP3 في القناة كاملة
   for (let page = 0; page < 20; page++) {
     const params = new URLSearchParams({ limit: '250', offset: String(offset) });
     if (sinceIso) params.set('since', sinceIso);
@@ -32,7 +34,7 @@ export async function fetchDeltaSync(baseUrl: string, sinceIso?: string): Promis
       headers: { 'X-App-Client': 'essa-alleth-rn-web' },
     });
     if (!res.ok) {
-      throw new Error(`تعذرت المزامنة من Edge API (HTTP ${res.status})`);
+      throw new Error(`تعذرت المزامنة من الخادم (HTTP ${res.status})`);
     }
     const data = (await res.json()) as SyncResponse;
     lastMeta = data;
@@ -51,4 +53,3 @@ export async function fetchDeltaSync(baseUrl: string, sinceIso?: string): Promis
     tracks: allTracks,
   };
 }
-

@@ -1,5 +1,5 @@
 import React, { useEffect, useMemo, useState } from 'react';
-import { Pressable, ScrollView, StyleSheet, Text, View } from 'react-native';
+import { ActivityIndicator, Pressable, ScrollView, StyleSheet, Text, View } from 'react-native';
 import type { Track } from '@shared/types/track';
 import { FONTS, RADIUS, type ThemePalette } from '../theme/tokens';
 import { useAppStore } from '../store/useAppStore';
@@ -308,11 +308,15 @@ export const FullPlayerModal: React.FC<FullPlayerModalProps> = ({ theme }) => {
               ]}
               accessibilityLabel={isPlaying ? 'إيقاف مؤقت' : 'تشغيل'}
             >
-              <Icon
-                name={isPlaying ? 'pause' : 'play'}
-                size={30}
-                color={theme.accentText}
-              />
+              {isBuffering ? (
+                <ActivityIndicator size="small" color={theme.accentText} />
+              ) : (
+                <Icon
+                  name={isPlaying ? 'pause' : 'play'}
+                  size={30}
+                  color={theme.accentText}
+                />
+              )}
             </Pressable>
 
             <Pressable onPress={() => skipBy(10)} style={styles.smallCtrlBtn} accessibilityLabel="تقديم 10 ثوان">

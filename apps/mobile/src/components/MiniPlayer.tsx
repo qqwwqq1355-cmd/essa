@@ -1,5 +1,5 @@
 import React from 'react';
-import { Pressable, StyleSheet, Text, View } from 'react-native';
+import { ActivityIndicator, Pressable, StyleSheet, Text, View } from 'react-native';
 import type { Track } from '@shared/types/track';
 import { FONTS, RADIUS, type ThemePalette } from '../theme/tokens';
 import { TrackCover } from './TrackCover';
@@ -9,6 +9,7 @@ interface MiniPlayerProps {
   track: Track;
   theme: ThemePalette;
   isPlaying: boolean;
+  isBuffering?: boolean;
   positionSec: number;
   durationSec: number;
   isFavorite: boolean;
@@ -23,6 +24,7 @@ export const MiniPlayer: React.FC<MiniPlayerProps> = ({
   track,
   theme,
   isPlaying,
+  isBuffering = false,
   positionSec,
   durationSec,
   isFavorite,
@@ -114,7 +116,11 @@ export const MiniPlayer: React.FC<MiniPlayerProps> = ({
               hitSlop={6}
               accessibilityLabel={isPlaying ? 'إيقاف مؤقت' : 'تشغيل'}
             >
-              <Icon name={isPlaying ? 'pause' : 'play'} size={19} color={theme.accentText} />
+              {isBuffering ? (
+                <ActivityIndicator size="small" color={theme.accentText} />
+              ) : (
+                <Icon name={isPlaying ? 'pause' : 'play'} size={19} color={theme.accentText} />
+              )}
             </Pressable>
 
             <Pressable

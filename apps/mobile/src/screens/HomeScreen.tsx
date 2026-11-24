@@ -1,5 +1,5 @@
-import React, { useMemo, useRef } from 'react';
-import { Pressable, ScrollView, StyleSheet, Text, View } from 'react-native';
+import React, { useMemo } from 'react';
+import { ActivityIndicator, Pressable, ScrollView, StyleSheet, Text, View } from 'react-native';
 import type { TrackCategory } from '@shared/types/track';
 import { FONTS, RADIUS, type ThemePalette } from '../theme/tokens';
 import { useAppStore } from '../store/useAppStore';
@@ -43,11 +43,8 @@ export const HomeScreen: React.FC<HomeScreenProps> = ({ theme }) => {
     removeDownload,
     openLyricsShare,
     openPlaylistPicker,
-    setActiveTab,
-    importLocalAudioFile,
+    syncError,
   } = useAppStore();
-
-  const fileInputRef = useRef<HTMLInputElement | null>(null);
 
   const featuredTrack = tracks[0];
 
@@ -63,7 +60,10 @@ export const HomeScreen: React.FC<HomeScreenProps> = ({ theme }) => {
     });
   }, [tracks, playProgress]);
 
-  const dailyQuoteTrack = tracks[2] || tracks[0];
+  const dailyQuoteTrack = useMemo(
+    () => tracks.find((t) => t.hasLyrics && (t.lyrics || '').trim().length > 20) || null,
+    [tracks]
+  );
   const dailyQuoteLines = (dailyQuoteTrack?.lyrics || '')
     .split('\n')
     .map((l) => l.trim())
@@ -72,29 +72,12 @@ export const HomeScreen: React.FC<HomeScreenProps> = ({ theme }) => {
 
   const filteredIds = useMemo(() => filteredTracks.map((t) => t.id), [filteredTracks]);
 
-  const handleFileChange = (e: React.ChangeEvent<HTMLInputElement>) => {
-    const file = e.target.files?.[0];
-    if (file) {
-      importLocalAudioFile(file);
-    }
-    e.target.value = '';
-  };
-
   return (
     <ScrollView
       style={styles.scroll}
       contentContainerStyle={styles.container}
       showsVerticalScrollIndicator={false}
     >
-      {/* مدخل خفي لاستيراد ملف MP3 محلي للتجربة الفورية */}
-      <input
-        ref={fileInputRef}
-        type="file"
-        accept="audio/*"
-        style={{ display: 'none' }}
-        onChange={handleFileChange}
-      />
-
       {/* الترويسة الرئيسية */}
       <View style={styles.header}>
         <View style={styles.brandCol}>
@@ -103,13 +86,13 @@ export const HomeScreen: React.FC<HomeScreenProps> = ({ theme }) => {
             <View
               style={[
                 styles.liveDot,
-                { backgroundColor: connectionMode === 'live' ? theme.emerald : theme.accent },
+                { backgroundColor: connectionMode === 'live' ? theme.emerald : theme.danger },
               ]}
             />
             <Text style={[styles.syncStatusText, { color: theme.textSecondary }]}>
               {connectionMode === 'live'
-                ? `متزامن مع @IssaAllaith • ${lastSyncAt ? formatRelativeArabicDate(lastSyncAt) : 'الآن'}`
-                : `معاينة تفاعلية • قناة @IssaAllaith`}
+                ? `متزامن مع @IssaAllaith • ${lastSyncAt ? formatRelativeArabicDate(lastSyncAt) : 'مباشر'}`
+                : `الوضع المحلي (أوفلاين) • @IssaAllaith`}
             </Text>
           </View>
         </View>
@@ -139,6 +122,40 @@ export const HomeScreen: React.FC<HomeScreenProps> = ({ theme }) => {
           </Pressable>
         </View>
       </View>
+
+      {/* شاشة التحميل الأولى عند فتح التطبيق لأول مرة (بدون أي أغاني تجريبية!) */}
+      {tracks.length === 0 && (
+        <View style={[styles.loadingCard, { backgroundColor: theme.surface, borderColor: theme.border }]}>
+          {isSyncing ? (
+            <>
+              <ActivityIndicator size="large" color={theme.accent} />
+              <Text style={[styles.loadingTitle, { color: theme.textPrimary }]}>
+                جاري تحميل مكتبة عيسى الليث...
+              </Text>
+              <Text style={[styles.loadingSub, { color: theme.textSecondary }]}>
+                يتم جلب أحدث الزوامل والكلمات مباشرة من قناة @IssaAllaith
+              </Text>
+            </>
+          ) : (
+            <>
+              <Icon name="wifi-off" size={32} color={theme.textMuted} />
+              <Text style={[styles.loadingTitle, { color: theme.textPrimary }]}>
+                تعذّر جلب المكتبة حالياً
+              </Text>
+              <Text style={[styles.loadingSub, { color: theme.textSecondary }]}>
+                {syncError || 'تحقّق من الاتصال بالإنترنت ثم أعد المحاولة.'}
+              </Text>
+              <Pressable
+                onPress={() => void syncWithTelegramApi()}
+                style={[styles.retryBtn, { backgroundColor: theme.accent }]}
+              >
+                <Icon name="sync" size={15} color={theme.accentText} />
+                <Text style={[styles.retryBtnText, { color: theme.accentText }]}>إعادة المحاولة</Text>
+              </Pressable>
+            </>
+          )}
+        </View>
+      )}
 
       {/* بطاقة المقطع الأحدث (Hero Card) */}
       {featuredTrack && (
@@ -207,31 +224,6 @@ export const HomeScreen: React.FC<HomeScreenProps> = ({ theme }) => {
         </View>
       )}
 
-      {/* شريط سريع في وضع المعاينة لتجربة MP3 حقيقي أو ربط تليجرام */}
-      {connectionMode === 'preview' && (
-        <View style={[styles.quickStrip, { backgroundColor: theme.surface, borderColor: theme.border }]}>
-          <Pressable
-            onPress={() => fileInputRef.current?.click()}
-            style={[styles.quickStripBtn, { backgroundColor: theme.accentSoft }]}
-          >
-            <Icon name="upload" size={15} color={theme.accent} />
-            <Text style={[styles.quickStripBtnText, { color: theme.accent }]}>
-              جرّب ملف MP3 من جهازك
-            </Text>
-          </Pressable>
-
-          <Pressable
-            onPress={() => setActiveTab('settings')}
-            style={[styles.quickStripBtn, { backgroundColor: theme.emeraldSoft }]}
-          >
-            <Icon name="telegram" size={15} color={theme.emerald} />
-            <Text style={[styles.quickStripBtnText, { color: theme.emerald }]}>
-              إعداد ربط تليجرام
-            </Text>
-          </Pressable>
-        </View>
-      )}
-
       {/* استكمل الاستماع */}
       {continueListening.length > 0 && (
         <View style={styles.section}>
@@ -265,76 +257,79 @@ export const HomeScreen: React.FC<HomeScreenProps> = ({ theme }) => {
         </View>
       )}
 
-      {/* تصنيفات سريعة */}
-      <ScrollView
-        horizontal
-        showsHorizontalScrollIndicator={false}
-        contentContainerStyle={styles.chipsRow}
-      >
-        {CATEGORIES.map((cat) => {
-          const active = selectedCategory === cat;
-          return (
-            <Pressable
-              key={cat}
-              onPress={() => setSelectedCategory(cat)}
-              style={[
-                styles.catChip,
-                {
-                  backgroundColor: active ? theme.accent : theme.surface,
-                  borderColor: active ? theme.accent : theme.border,
-                },
-              ]}
-            >
-              <Text
-                style={[
-                  styles.catChipText,
-                  { color: active ? theme.accentText : theme.textSecondary },
-                ]}
-              >
-                {cat}
+      {/* تصنيفات سريعة وقائمة المقاطع */}
+      {tracks.length > 0 && (
+        <>
+          <ScrollView
+            horizontal
+            showsHorizontalScrollIndicator={false}
+            contentContainerStyle={styles.chipsRow}
+          >
+            {CATEGORIES.map((cat) => {
+              const active = selectedCategory === cat;
+              return (
+                <Pressable
+                  key={cat}
+                  onPress={() => setSelectedCategory(cat)}
+                  style={[
+                    styles.catChip,
+                    {
+                      backgroundColor: active ? theme.accent : theme.surface,
+                      borderColor: active ? theme.accent : theme.border,
+                    },
+                  ]}
+                >
+                  <Text
+                    style={[
+                      styles.catChipText,
+                      { color: active ? theme.accentText : theme.textSecondary },
+                    ]}
+                  >
+                    {cat}
+                  </Text>
+                </Pressable>
+              );
+            })}
+          </ScrollView>
+
+          <View style={styles.section}>
+            <View style={styles.sectionHeader}>
+              <Text style={[styles.sectionTitle, { color: theme.textPrimary }]}>
+                {selectedCategory === 'الكل' ? 'أحدث المقاطع' : `قسم ${selectedCategory}`} ({filteredTracks.length})
               </Text>
-            </Pressable>
-          );
-        })}
-      </ScrollView>
+              {filteredTracks.length > 0 && (
+                <Pressable
+                  onPress={() => void playTrack(filteredTracks[0].id, filteredIds)}
+                  style={styles.playAllBtn}
+                >
+                  <Icon name="play" size={13} color={theme.accent} />
+                  <Text style={[styles.playAllText, { color: theme.accent }]}>تشغيل الكل</Text>
+                </Pressable>
+              )}
+            </View>
 
-      {/* قائمة المقاطع */}
-      <View style={styles.section}>
-        <View style={styles.sectionHeader}>
-          <Text style={[styles.sectionTitle, { color: theme.textPrimary }]}>
-            {selectedCategory === 'الكل' ? 'أحدث المقاطع' : `قسم ${selectedCategory}`} ({filteredTracks.length})
-          </Text>
-          {filteredTracks.length > 0 && (
-            <Pressable
-              onPress={() => void playTrack(filteredTracks[0].id, filteredIds)}
-              style={styles.playAllBtn}
-            >
-              <Icon name="play" size={13} color={theme.accent} />
-              <Text style={[styles.playAllText, { color: theme.accent }]}>تشغيل الكل</Text>
-            </Pressable>
-          )}
-        </View>
-
-        {filteredTracks.map((track) => (
-          <TrackRow
-            key={track.id}
-            track={track}
-            theme={theme}
-            isCurrent={currentTrackId === track.id}
-            isPlaying={currentTrackId === track.id && isPlaying}
-            isFavorite={favorites.includes(track.id)}
-            isDownloaded={downloadedIds.includes(track.id)}
-            downloadProgress={downloadingIds[track.id]}
-            onPress={() => void playTrack(track.id, filteredIds)}
-            onLyricsPress={() => void playTrack(track.id, filteredIds, 'lyrics')}
-            onToggleFavorite={() => toggleFavorite(track.id)}
-            onDownloadPress={() =>
-              downloadedIds.includes(track.id) ? removeDownload(track.id) : downloadTrack(track.id)
-            }
-            onPlaylistPress={() => openPlaylistPicker(track.id)}
-          />
-        ))}
-      </View>
+            {filteredTracks.map((track) => (
+              <TrackRow
+                key={track.id}
+                track={track}
+                theme={theme}
+                isCurrent={currentTrackId === track.id}
+                isPlaying={currentTrackId === track.id && isPlaying}
+                isFavorite={favorites.includes(track.id)}
+                isDownloaded={downloadedIds.includes(track.id)}
+                downloadProgress={downloadingIds[track.id]}
+                onPress={() => void playTrack(track.id, filteredIds)}
+                onLyricsPress={() => void playTrack(track.id, filteredIds, 'lyrics')}
+                onToggleFavorite={() => toggleFavorite(track.id)}
+                onDownloadPress={() =>
+                  downloadedIds.includes(track.id) ? removeDownload(track.id) : downloadTrack(track.id)
+                }
+                onPlaylistPress={() => openPlaylistPicker(track.id)}
+              />
+            ))}
+          </View>
+        </>
+      )}
 
       {/* بطاقة بيت مختار اليوم */}
       {dailyQuoteTrack && dailyQuoteLines.length > 0 && (
@@ -511,26 +506,38 @@ const styles = StyleSheet.create({
     fontWeight: '600',
     color: '#F4F6FA',
   },
-  quickStrip: {
-    flexDirection: 'row',
-    gap: 8,
-    padding: 8,
-    borderRadius: RADIUS.md,
+  loadingCard: {
+    borderRadius: RADIUS.xl,
     borderWidth: 1,
+    paddingVertical: 38,
+    paddingHorizontal: 20,
+    alignItems: 'center',
+    gap: 10,
   },
-  quickStripBtn: {
-    flex: 1,
+  loadingTitle: {
+    fontFamily: FONTS.ui,
+    fontSize: 15.5,
+    fontWeight: '700',
+    textAlign: 'center',
+  },
+  loadingSub: {
+    fontFamily: FONTS.ui,
+    fontSize: 12.5,
+    textAlign: 'center',
+    lineHeight: 20,
+  },
+  retryBtn: {
     flexDirection: 'row',
     alignItems: 'center',
-    justifyContent: 'center',
     gap: 6,
-    paddingVertical: 8,
-    paddingHorizontal: 8,
-    borderRadius: RADIUS.sm,
+    paddingHorizontal: 16,
+    paddingVertical: 9,
+    borderRadius: RADIUS.full,
+    marginTop: 4,
   },
-  quickStripBtnText: {
+  retryBtnText: {
     fontFamily: FONTS.ui,
-    fontSize: 11.5,
+    fontSize: 13,
     fontWeight: '700',
   },
   section: {

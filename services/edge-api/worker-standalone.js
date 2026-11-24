@@ -101,7 +101,7 @@ function mapRowToTrack(row, origin) {
     fileSizeBytes: row.file_size_bytes || 0,
     mimeType: row.mime_type || 'audio/mpeg',
     storageProvider: row.storage_provider || 'github',
-    streamUrl: `${origin}/v1/tracks/${encodeURIComponent(row.id)}/stream`,
+    streamUrl: `${origin}/v1/tracks/${encodeURIComponent(row.id)}/stream?v=${encodeURIComponent(row.updated_at || '1')}`,
     coverUrl: row.cover_url ?? null,
     palette: getPalette(row.source_message_id),
     publishedAt: row.published_at,
@@ -114,24 +114,85 @@ function mapRowToTrack(row, origin) {
   };
 }
 
-/**
- * يبث ملف الـ MP3 مباشرة من GitHub Releases CDN بدعم HTTP 206 Range Requests (التقديم والترجيع الفوري)
- */
-async function streamFromDirectUrl(audioUrl, mimeType, rangeHeader, env) {
-  const upstreamHeaders = new Headers({
-    'User-Agent': 'essa-alleth-edge-api',
-  });
-  if (rangeHeader) {
-    upstreamHeaders.set('Range', rangeHeader);
-  }
-  if (env.GITHUB_TOKEN && audioUrl.includes('github.com')) {
-    upstreamHeaders.set('Authorization', `Bearer ${env.GITHUB_TOKEN}`);
+// كاش مؤقت لروابط التحميل الموقّعة من GitHub (يختصر تحويل 302 في كل قطعة بث!)
+const signedRedirectCache = new Map(); // audioUrl -> { url, expiresAt }
+
+async function resolveGitHubDirectAssetUrl(audioUrl, env, forceRefresh = false) {
+  const now = Date.now();
+  if (!forceRefresh) {
+    const cached = signedRedirectCache.get(audioUrl);
+    if (cached && cached.expiresAt > now) {
+      return cached.url;
+    }
   }
 
-  const upstream = await fetch(audioUrl, {
-    headers: upstreamHeaders,
-    redirect: 'follow',
-  });
+  const headers = new Headers({ 'User-Agent': 'essa-alleth-edge-api' });
+  if (env.GITHUB_TOKEN && audioUrl.includes('github.com')) {
+    headers.set('Authorization', `Bearer ${env.GITHUB_TOKEN}`);
+  }
+
+  const probe = await fetch(audioUrl, { headers, redirect: 'manual' });
+  const loc = probe.headers.get('Location');
+  if (loc && (probe.status === 301 || probe.status === 302 || probe.status === 307 || probe.status === 308)) {
+    signedRedirectCache.set(audioUrl, { url: loc, expiresAt: now + 120_000 }); // دقيقتان
+    return loc;
+  }
+  return audioUrl;
+}
+
+/**
+ * يحوّل طلبات Range المفتوحة (bytes=0-) إلى قطع بث سريعة (256KB للبدء الفوري، ثم 512KB)
+ * تماماً مثل YouTube و Spotify حتى يبدأ تشغيل الصوت خلال أقل من نصف ثانية دون انتظار تحميل كامل الملف!
+ */
+function buildChunkedRangeHeader(rangeHeader) {
+  if (!rangeHeader) return null;
+  const match = rangeHeader.match(/^bytes=(\d+)-(\d*)$/i);
+  if (!match) return rangeHeader;
+
+  const start = Number(match[1]);
+  const rawEnd = match[2];
+
+  // إذا حدّد المتصفح نهاية صغيرة صريحة (أقل من 1MB) نحترمها كما هي
+  if (rawEnd) {
+    const end = Number(rawEnd);
+    if (end >= start && end - start <= 1048576) {
+      return `bytes=${start}-${end}`;
+    }
+  }
+
+  // أول قطعة 64KB لبدء التشغيل الفوري خلال ثانية، والقطع التالية 256KB لتدفق ناعم حتى على النت الضعيف
+  const chunkSize = start === 0 ? 65536 : 262144;
+  const cappedEnd = start + chunkSize - 1;
+  return `bytes=${start}-${cappedEnd}`;
+}
+
+/**
+ * يبث ملف الـ MP3 بتدفق فوري متدرج (Progressive Chunked HTTP 206 Streaming)
+ */
+async function streamFromDirectUrl(audioUrl, mimeType, rangeHeader, env) {
+  const effectiveRange = buildChunkedRangeHeader(rangeHeader);
+  let targetUrl = audioUrl.includes('github.com')
+    ? await resolveGitHubDirectAssetUrl(audioUrl, env, false)
+    : audioUrl;
+
+  const doFetch = async (urlToFetch, range) => {
+    const h = new Headers({ 'User-Agent': 'essa-alleth-edge-api' });
+    if (range) h.set('Range', range);
+    return fetch(urlToFetch, { headers: h, redirect: 'follow' });
+  };
+
+  let upstream = await doFetch(targetUrl, effectiveRange);
+
+  // إذا انتهت صلاحية رابط GitHub الموقّع المخزن في الكاش نعيد حله مرة واحدة فوراً
+  if ((upstream.status === 403 || upstream.status === 404) && audioUrl.includes('github.com')) {
+    targetUrl = await resolveGitHubDirectAssetUrl(audioUrl, env, true);
+    upstream = await doFetch(targetUrl, effectiveRange);
+  }
+
+  // في حال كان الملف أصغر من نطاق الكتلة نعيد الطلب بنطاق المتصفح الأصلي
+  if (upstream.status === 416 && effectiveRange !== rangeHeader) {
+    upstream = await doFetch(targetUrl, rangeHeader);
+  }
 
   if (!upstream.ok && upstream.status !== 206) {
     return jsonResponse(

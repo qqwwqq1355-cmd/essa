@@ -76,10 +76,10 @@ export const SettingsScreen: React.FC<SettingsScreenProps> = ({ theme }) => {
             <Text
               style={[
                 styles.statusChipText,
-                { color: connectionMode === 'live' ? theme.emerald : theme.accent },
+                { color: connectionMode === 'live' ? theme.emerald : theme.danger },
               ]}
             >
-              {connectionMode === 'live' ? 'متصل' : 'معاينة'}
+              {connectionMode === 'live' ? 'متصل' : 'أوفلاين'}
             </Text>
           </View>
         </View>
