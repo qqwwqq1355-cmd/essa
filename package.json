@@ -1,0 +1,27 @@
+{
+  "name": "essa-alleth-monorepo",
+  "version": "1.0.0",
+  "private": true,
+  "description": "Issa Al-Laith Audio & Lyrics Library — React Native App + Automated Telegram Sync + Cloudflare Edge API",
+  "workspaces": [
+    "packages/shared",
+    "apps/mobile"
+  ],
+  "scripts": {
+    "dev": "npm --workspace=@essa/mobile run dev",
+    "build": "npm --workspace=@essa/mobile run build",
+    "preview": "npm --workspace=@essa/mobile run preview",
+    "typecheck": "npm --workspace=@essa/mobile run typecheck",
+    "sync:install": "npm --prefix services/telegram-sync install",
+    "sync:session": "npm --prefix services/telegram-sync run session",
+    "sync:run": "npm --prefix services/telegram-sync run sync",
+    "sync:backfill": "npm --prefix services/telegram-sync run backfill",
+    "api:install": "npm --prefix services/edge-api install",
+    "api:dev": "npm --prefix services/edge-api run dev",
+    "api:deploy": "npm --prefix services/edge-api run deploy"
+  },
+  "engines": {
+    "node": ">=18.0.0"
+  }
+}
+

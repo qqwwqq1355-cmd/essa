@@ -1,0 +1,54 @@
+import type { HealthResponse, SyncResponse } from '@shared/types/track';
+
+const DEFAULT_API_BASE = (import.meta.env.VITE_API_BASE_URL || '').trim().replace(/\/+$/, '');
+
+export function getDefaultApiBaseUrl(): string {
+  return DEFAULT_API_BASE;
+}
+
+export async function fetchApiHealth(baseUrl: string): Promise<HealthResponse> {
+  const clean = baseUrl.trim().replace(/\/+$/, '');
+  const res = await fetch(`${clean}/v1/health`, {
+    headers: { 'X-App-Client': 'essa-alleth-rn-web' },
+  });
+  if (!res.ok) {
+    throw new Error(`فشل الاتصال بالخادم (HTTP ${res.status})`);
+  }
+  return (await res.json()) as HealthResponse;
+}
+
+export async function fetchDeltaSync(baseUrl: string, sinceIso?: string): Promise<SyncResponse> {
+  const clean = baseUrl.trim().replace(/\/+$/, '');
+  const allTracks: SyncResponse['tracks'] = [];
+  let offset = 0;
+  let lastMeta: SyncResponse | null = null;
+
+  // يجلب كل الصفحات تلقائياً حتى تظهر جميع ملفات MP3 في القناة كاملة
+  for (let page = 0; page < 20; page++) {
+    const params = new URLSearchParams({ limit: '250', offset: String(offset) });
+    if (sinceIso) params.set('since', sinceIso);
+
+    const res = await fetch(`${clean}/v1/sync?${params.toString()}`, {
+      headers: { 'X-App-Client': 'essa-alleth-rn-web' },
+    });
+    if (!res.ok) {
+      throw new Error(`تعذرت المزامنة من Edge API (HTTP ${res.status})`);
+    }
+    const data = (await res.json()) as SyncResponse;
+    lastMeta = data;
+    allTracks.push(...data.tracks);
+
+    if (!data.hasMore || data.tracks.length === 0) break;
+    offset += 250;
+  }
+
+  return {
+    serverTime: lastMeta?.serverTime || new Date().toISOString(),
+    sourceChannel: lastMeta?.sourceChannel || 'IssaAllaith',
+    hasMore: false,
+    nextCursor: null,
+    totalCount: lastMeta?.totalCount ?? allTracks.length,
+    tracks: allTracks,
+  };
+}
+

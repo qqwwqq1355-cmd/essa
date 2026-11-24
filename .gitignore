@@ -1,0 +1,32 @@
+# Dependencies
+node_modules/
+.pnpm-store/
+
+# Environment files (NEVER commit secrets!)
+.env
+.env.local
+.env.production
+.dev.vars
+*.session
+
+# Build outputs
+dist/
+build/
+.wrangler/
+.vite/
+*.tsbuildinfo
+
+# Mobile Native builds (future APK/AAB)
+apps/mobile/android/app/build/
+apps/mobile/android/.gradle/
+apps/mobile/android/local.properties
+*.keystore
+*.jks
+*.apk
+*.aab
+
+# Logs & OS
+*.log
+.DS_Store
+Thumbs.db
+

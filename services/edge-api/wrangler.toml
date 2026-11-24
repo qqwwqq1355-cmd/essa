@@ -1,0 +1,19 @@
+name = "essa-alleth-edge-api"
+main = "src/index.ts"
+compatibility_date = "2024-12-01"
+account_id = "67b4787e96cc6b21ae21f9f4a4bc5f2c"
+
+[vars]
+SOURCE_CHANNEL_USERNAME = "IssaAllaith"
+STORAGE_MODE = "telegram"
+
+[[d1_databases]]
+binding = "DB"
+database_name = "essa-alleth-db"
+database_id = "a394cc00-7e5b-4b16-a461-d15ea72ff762"
+
+# اختياري: للتوسع التجاري عبر Cloudflare R2
+# [[r2_buckets]]
+# binding = "AUDIO_BUCKET"
+# bucket_name = "essa-alleth-audio"
+

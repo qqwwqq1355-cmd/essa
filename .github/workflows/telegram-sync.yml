@@ -1,0 +1,57 @@
+name: Automated Telegram Sync (@IssaAllaith -> GitHub Releases + Cloudflare D1)
+
+on:
+  schedule:
+    # يفحص قناة عيسى الليث تلقائياً كل 5 دقائق — أي زامل جديد يُرفع ويظهر فوراً!
+    - cron: '*/5 * * * *'
+  workflow_dispatch:
+    inputs:
+      mode:
+        description: 'وضع المزامنة (backfill لسحب كل ملفات القناة، incremental للزوامل الجديدة فقط)'
+        required: true
+        default: 'backfill'
+        type: choice
+        options:
+          - backfill
+          - incremental
+
+permissions:
+  contents: write
+
+concurrency:
+  group: telegram-sync-issa-allaith
+  cancel-in-progress: false
+
+jobs:
+  sync:
+    runs-on: ubuntu-latest
+    timeout-minutes: 45
+    steps:
+      - name: Checkout Repository
+        uses: actions/checkout@v4
+
+      - name: Setup Node.js 22
+        uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+
+      - name: Install Sync Dependencies
+        working-directory: services/telegram-sync
+        run: npm install --no-audit --no-fund
+
+      - name: Sync @IssaAllaith MP3 & Lyrics to GitHub Releases + D1
+        working-directory: services/telegram-sync
+        env:
+          SOURCE_CHANNEL_USERNAME: IssaAllaith
+          STORAGE_MODE: github
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          GITHUB_REPOSITORY: ${{ github.repository }}
+          GITHUB_RELEASE_TAG: audio-v1
+          TELEGRAM_API_ID: ${{ secrets.TELEGRAM_API_ID }}
+          TELEGRAM_API_HASH: ${{ secrets.TELEGRAM_API_HASH }}
+          TELEGRAM_STRING_SESSION: ${{ secrets.TELEGRAM_STRING_SESSION }}
+          CLOUDFLARE_ACCOUNT_ID: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
+          CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
+          CLOUDFLARE_D1_DATABASE_ID: ${{ secrets.CLOUDFLARE_D1_DATABASE_ID }}
+          SYNC_MODE: ${{ github.event.inputs.mode || 'incremental' }}
+        run: npm run sync
