@@ -1,22 +1,19 @@
-name: Automated Telegram Sync (@IssaAllaith -> GitHub Releases + Cloudflare D1)
+name: Automated Telegram Sync (@IssaAllaith -> Cloudflare R2 + D1)
 
 on:
   schedule:
-    # يفحص قناة عيسى الليث تلقائياً كل 5 دقائق — أي زامل جديد يُحسّن بـ ffmpeg ويُرفع فوراً!
+    # يفحص قناة عيسى الليث تلقائياً كل 5 دقائق — أي زامل جديد يُحسّن بـ ffmpeg ويُرفع إلى Cloudflare R2 فوراً!
     - cron: '*/5 * * * *'
   workflow_dispatch:
     inputs:
       mode:
-        description: 'وضع المزامنة (backfill لسحب وتحسين كل ملفات القناة، incremental للزوامل الجديدة فقط)'
+        description: 'وضع المزامنة (backfill لنقل وتحسين كل الزوامل إلى Cloudflare R2، incremental للجديد فقط)'
         required: true
         default: 'backfill'
         type: choice
         options:
           - backfill
           - incremental
-
-permissions:
-  contents: write
 
 concurrency:
   group: telegram-sync-issa-allaith
@@ -35,21 +32,19 @@ jobs:
         with:
           node-version: '22'
 
-      - name: Ensure FFmpeg (Fast-Start Audio Optimization)
+      - name: Ensure FFmpeg (Fast-Start 96k Audio Optimization)
         run: which ffmpeg || (sudo apt-get update && sudo apt-get install -y ffmpeg)
 
       - name: Install Sync Dependencies
         working-directory: services/telegram-sync
         run: npm install --no-audit --no-fund
 
-      - name: Sync & Optimize @IssaAllaith MP3 & Lyrics
+      - name: Sync & Upload @IssaAllaith MP3 directly to Cloudflare R2 + D1
         working-directory: services/telegram-sync
         env:
           SOURCE_CHANNEL_USERNAME: IssaAllaith
-          STORAGE_MODE: github
-          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-          GITHUB_REPOSITORY: ${{ github.repository }}
-          GITHUB_RELEASE_TAG: audio-opt-v1
+          STORAGE_MODE: r2
+          EDGE_API_URL: https://essa-alleth-edge-api.qqwwqq1355.workers.dev
           AUDIO_BITRATE: 96k
           TELEGRAM_API_ID: ${{ secrets.TELEGRAM_API_ID }}
           TELEGRAM_API_HASH: ${{ secrets.TELEGRAM_API_HASH }}
@@ -57,5 +52,6 @@ jobs:
           CLOUDFLARE_ACCOUNT_ID: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
           CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
           CLOUDFLARE_D1_DATABASE_ID: ${{ secrets.CLOUDFLARE_D1_DATABASE_ID }}
+          R2_UPLOAD_SECRET: ${{ secrets.CLOUDFLARE_API_TOKEN }}
           SYNC_MODE: ${{ github.event.inputs.mode || 'incremental' }}
         run: npm run sync

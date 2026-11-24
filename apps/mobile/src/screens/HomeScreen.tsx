@@ -1,4 +1,4 @@
-import React, { useMemo } from 'react';
+import React, { useEffect, useMemo, useState } from 'react';
 import { ActivityIndicator, Pressable, ScrollView, StyleSheet, Text, View } from 'react-native';
 import type { TrackCategory } from '@shared/types/track';
 import { FONTS, RADIUS, type ThemePalette } from '../theme/tokens';
@@ -52,6 +52,16 @@ export const HomeScreen: React.FC<HomeScreenProps> = ({ theme }) => {
     if (selectedCategory === 'الكل') return tracks;
     return tracks.filter((t) => t.category === selectedCategory);
   }, [tracks, selectedCategory]);
+
+  // عرض تدريجي فائق السلاسة (40 مقطعاً في كل دفعة لضمان 60/120 FPS حتى مع آلاف الزوامل)
+  const [visibleCount, setVisibleCount] = useState(40);
+  useEffect(() => {
+    setVisibleCount(40);
+  }, [selectedCategory]);
+  const visibleTracks = useMemo(
+    () => filteredTracks.slice(0, visibleCount),
+    [filteredTracks, visibleCount]
+  );
 
   const continueListening = useMemo(() => {
     return tracks.filter((t) => {
@@ -308,7 +318,7 @@ export const HomeScreen: React.FC<HomeScreenProps> = ({ theme }) => {
               )}
             </View>
 
-            {filteredTracks.map((track) => (
+            {visibleTracks.map((track) => (
               <TrackRow
                 key={track.id}
                 track={track}
@@ -327,6 +337,17 @@ export const HomeScreen: React.FC<HomeScreenProps> = ({ theme }) => {
                 onPlaylistPress={() => openPlaylistPicker(track.id)}
               />
             ))}
+
+            {visibleCount < filteredTracks.length && (
+              <Pressable
+                onPress={() => setVisibleCount((c) => c + 50)}
+                style={[styles.loadMoreBtn, { backgroundColor: theme.surface, borderColor: theme.borderStrong }]}
+              >
+                <Text style={[styles.loadMoreText, { color: theme.accent }]}>
+                  عرض المزيد (المتبقي {filteredTracks.length - visibleCount} زامل)
+                </Text>
+              </Pressable>
+            )}
           </View>
         </>
       )}
@@ -536,6 +557,18 @@ const styles = StyleSheet.create({
     marginTop: 4,
   },
   retryBtnText: {
+    fontFamily: FONTS.ui,
+    fontSize: 13,
+    fontWeight: '700',
+  },
+  loadMoreBtn: {
+    paddingVertical: 12,
+    borderRadius: RADIUS.md,
+    borderWidth: 1,
+    alignItems: 'center',
+    marginTop: 4,
+  },
+  loadMoreText: {
     fontFamily: FONTS.ui,
     fontSize: 13,
     fontWeight: '700',

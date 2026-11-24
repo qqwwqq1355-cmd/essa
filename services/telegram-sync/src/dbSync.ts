@@ -77,11 +77,22 @@ export class CloudflareD1SyncClient {
 
   async getExistingSourceMessageIds(
     channelUsername: string,
-    storageMode: 'github' | 'telegram' | 'r2' = 'github',
+    storageMode: 'r2' | 'github' | 'telegram' = 'r2',
     releasePrefix = 'audio-opt'
   ): Promise<Set<number>> {
+    if (storageMode === 'r2') {
+      // في وضع Cloudflare R2 نتخطى فقط المقاطع المحسّنة والمرفوعة داخل R2 (audio/tg_*.mp3)
+      const rows = await this.query<{ source_message_id: number }>(
+        `SELECT source_message_id FROM tracks
+         WHERE source_channel = ? AND is_deleted = 0
+           AND storage_provider = 'r2'
+           AND r2_object_key LIKE 'audio/%'`,
+        [channelUsername]
+      );
+      return new Set(rows.map((r) => Number(r.source_message_id)));
+    }
+
     if (storageMode === 'github') {
-      // في وضع البث الفوري المحسّن، يعيد تحسين الملفات القديمة (320kbps) ويتخطى أي ملف محسّن بالفعل!
       const rows = await this.query<{ source_message_id: number }>(
         `SELECT source_message_id FROM tracks
          WHERE source_channel = ? AND is_deleted = 0

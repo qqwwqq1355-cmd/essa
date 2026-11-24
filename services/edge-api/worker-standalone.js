@@ -1,9 +1,11 @@
 /**
- * مكتبة عيسى الليث — Cloudflare Worker (بث فائق السرعة عبر GitHub Releases CDN — صفر 429!)
+ * مكتبة عيسى الليث — Cloudflare Worker (بث فوري مباشر من Cloudflare R2 + D1)
  *
  * المتطلبات في إعدادات الـ Worker بلوحة Cloudflare (Settings):
- *  - Bindings -> D1 database: DB -> essa-alleth-db
- *  - (اختياري للمستودعات الخاصة فقط) Secret: GITHUB_TOKEN
+ *  1) Bindings -> D1 database:   DB           -> essa-alleth-db
+ *  2) Bindings -> R2 bucket:     AUDIO_BUCKET -> essa-alleth-audio
+ *  3) Runtime variables & secrets -> Secret:
+ *       R2_UPLOAD_SECRET = نفس قيمة CLOUDFLARE_API_TOKEN (أو سر مشترك مع GitHub Secrets)
  */
 
 const PALETTE_PRESETS = [
@@ -17,8 +19,8 @@ const PALETTE_PRESETS = [
 
 const CORS_HEADERS = {
   'Access-Control-Allow-Origin': '*',
-  'Access-Control-Allow-Methods': 'GET, OPTIONS',
-  'Access-Control-Allow-Headers': 'Content-Type, Range, X-App-Client',
+  'Access-Control-Allow-Methods': 'GET, HEAD, PUT, OPTIONS',
+  'Access-Control-Allow-Headers': 'Content-Type, Range, Authorization, X-App-Client',
   'Access-Control-Expose-Headers': 'Content-Length, Content-Range, Accept-Ranges, ETag',
 };
 
@@ -38,7 +40,7 @@ async function ensureSchema(db) {
       duration_sec INTEGER NOT NULL DEFAULT 0,
       file_size_bytes INTEGER NOT NULL DEFAULT 0,
       mime_type TEXT NOT NULL DEFAULT 'audio/mpeg',
-      storage_provider TEXT NOT NULL DEFAULT 'github',
+      storage_provider TEXT NOT NULL DEFAULT 'r2',
       telegram_file_id TEXT,
       telegram_archive_msg_id INTEGER,
       r2_object_key TEXT,
@@ -100,7 +102,7 @@ function mapRowToTrack(row, origin) {
     durationSec: row.duration_sec || 0,
     fileSizeBytes: row.file_size_bytes || 0,
     mimeType: row.mime_type || 'audio/mpeg',
-    storageProvider: row.storage_provider || 'github',
+    storageProvider: row.storage_provider || 'r2',
     streamUrl: `${origin}/v1/tracks/${encodeURIComponent(row.id)}/stream?v=${encodeURIComponent(row.updated_at || '1')}`,
     coverUrl: row.cover_url ?? null,
     palette: getPalette(row.source_message_id),
@@ -114,121 +116,90 @@ function mapRowToTrack(row, origin) {
   };
 }
 
-// كاش مؤقت لروابط التحميل الموقّعة من GitHub (يختصر تحويل 302 في كل قطعة بث!)
-const signedRedirectCache = new Map(); // audioUrl -> { url, expiresAt }
-
-async function resolveGitHubDirectAssetUrl(audioUrl, env, forceRefresh = false) {
-  const now = Date.now();
-  if (!forceRefresh) {
-    const cached = signedRedirectCache.get(audioUrl);
-    if (cached && cached.expiresAt > now) {
-      return cached.url;
-    }
-  }
-
-  const headers = new Headers({ 'User-Agent': 'essa-alleth-edge-api' });
-  if (env.GITHUB_TOKEN && audioUrl.includes('github.com')) {
-    headers.set('Authorization', `Bearer ${env.GITHUB_TOKEN}`);
-  }
-
-  const probe = await fetch(audioUrl, { headers, redirect: 'manual' });
-  const loc = probe.headers.get('Location');
-  if (loc && (probe.status === 301 || probe.status === 302 || probe.status === 307 || probe.status === 308)) {
-    signedRedirectCache.set(audioUrl, { url: loc, expiresAt: now + 120_000 }); // دقيقتان
-    return loc;
-  }
-  return audioUrl;
-}
-
 /**
- * يحوّل طلبات Range المفتوحة (bytes=0-) إلى قطع بث سريعة (256KB للبدء الفوري، ثم 512KB)
- * تماماً مثل YouTube و Spotify حتى يبدأ تشغيل الصوت خلال أقل من نصف ثانية دون انتظار تحميل كامل الملف!
+ * بث مباشر فوري من Cloudflare R2 مع دعم كامل لـ HTTP 206 Partial Content و HEAD
  */
-function buildChunkedRangeHeader(rangeHeader) {
-  if (!rangeHeader) return null;
-  const match = rangeHeader.match(/^bytes=(\d+)-(\d*)$/i);
-  if (!match) return rangeHeader;
+async function streamFromR2Bucket(bucket, objectKey, mimeType, request) {
+  const rangeHeader = request.headers.get('Range');
 
-  const start = Number(match[1]);
-  const rawEnd = match[2];
-
-  // إذا حدّد المتصفح نهاية صغيرة صريحة (أقل من 1MB) نحترمها كما هي
-  if (rawEnd) {
-    const end = Number(rawEnd);
-    if (end >= start && end - start <= 1048576) {
-      return `bytes=${start}-${end}`;
-    }
+  if (request.method === 'HEAD') {
+    const headObj = await bucket.head(objectKey);
+    if (!headObj) return new Response(null, { status: 404, headers: CORS_HEADERS });
+    const headers = new Headers(CORS_HEADERS);
+    headers.set('Content-Type', mimeType || 'audio/mpeg');
+    headers.set('Accept-Ranges', 'bytes');
+    headers.set('Content-Length', String(headObj.size));
+    headers.set('Cache-Control', 'public, max-age=31536000, immutable');
+    return new Response(null, { status: 200, headers });
   }
 
-  // أول قطعة 64KB لبدء التشغيل الفوري خلال ثانية، والقطع التالية 256KB لتدفق ناعم حتى على النت الضعيف
-  const chunkSize = start === 0 ? 65536 : 262144;
-  const cappedEnd = start + chunkSize - 1;
-  return `bytes=${start}-${cappedEnd}`;
-}
+  const object = rangeHeader
+    ? await bucket.get(objectKey, { range: request.headers })
+    : await bucket.get(objectKey);
 
-/**
- * يبث ملف الـ MP3 بتدفق فوري متدرج (Progressive Chunked HTTP 206 Streaming)
- */
-async function streamFromDirectUrl(audioUrl, mimeType, rangeHeader, env) {
-  const effectiveRange = buildChunkedRangeHeader(rangeHeader);
-  let targetUrl = audioUrl.includes('github.com')
-    ? await resolveGitHubDirectAssetUrl(audioUrl, env, false)
-    : audioUrl;
-
-  const doFetch = async (urlToFetch, range) => {
-    const h = new Headers({ 'User-Agent': 'essa-alleth-edge-api' });
-    if (range) h.set('Range', range);
-    return fetch(urlToFetch, { headers: h, redirect: 'follow' });
-  };
-
-  let upstream = await doFetch(targetUrl, effectiveRange);
-
-  // إذا انتهت صلاحية رابط GitHub الموقّع المخزن في الكاش نعيد حله مرة واحدة فوراً
-  if ((upstream.status === 403 || upstream.status === 404) && audioUrl.includes('github.com')) {
-    targetUrl = await resolveGitHubDirectAssetUrl(audioUrl, env, true);
-    upstream = await doFetch(targetUrl, effectiveRange);
-  }
-
-  // في حال كان الملف أصغر من نطاق الكتلة نعيد الطلب بنطاق المتصفح الأصلي
-  if (upstream.status === 416 && effectiveRange !== rangeHeader) {
-    upstream = await doFetch(targetUrl, rangeHeader);
-  }
-
-  if (!upstream.ok && upstream.status !== 206) {
-    return jsonResponse(
-      { error: `Audio CDN returned HTTP ${upstream.status}`, audioUrl },
-      502
-    );
+  if (!object) {
+    return jsonResponse({ error: 'Audio object not found in Cloudflare R2.', key: objectKey }, 404);
   }
 
   const headers = new Headers(CORS_HEADERS);
+  object.writeHttpMetadata(headers);
   headers.set('Content-Type', mimeType || 'audio/mpeg');
   headers.set('Accept-Ranges', 'bytes');
-  headers.set('Cache-Control', 'public, max-age=86400');
+  headers.set('Cache-Control', 'public, max-age=31536000, immutable');
+  if (object.httpEtag) headers.set('ETag', object.httpEtag);
 
-  const contentLength = upstream.headers.get('Content-Length');
-  const contentRange = upstream.headers.get('Content-Range');
-  if (contentLength) headers.set('Content-Length', contentLength);
-  if (contentRange) headers.set('Content-Range', contentRange);
+  const isPartial = Boolean(rangeHeader && object.range);
+  if (isPartial) {
+    let start = 0;
+    let length = object.size;
+    if ('suffix' in object.range && typeof object.range.suffix === 'number') {
+      length = Math.min(object.range.suffix, object.size);
+      start = object.size - length;
+    } else {
+      start = object.range.offset ?? 0;
+      length = object.range.length ?? (object.size - start);
+    }
+    const end = Math.max(start, start + length - 1);
+    headers.set('Content-Range', `bytes ${start}-${end}/${object.size}`);
+    headers.set('Content-Length', String(length));
+  } else {
+    headers.set('Content-Length', String(object.size));
+  }
 
-  return new Response(upstream.body, {
-    status: upstream.status,
+  return new Response(object.body, {
+    status: isPartial ? 206 : 200,
     headers,
   });
 }
 
-async function streamFromTelegram(env, telegramFileId, mimeType, rangeHeader) {
-  if (!env.TELEGRAM_BOT_TOKEN) {
-    return jsonResponse({ error: 'TELEGRAM_BOT_TOKEN is not configured.' }, 503);
+// بديل للمقاطع القديمة التي ما زالت على GitHub قبل إتمام انتقالها إلى R2
+async function streamFromDirectUrl(audioUrl, mimeType, rangeHeader) {
+  const h = new Headers({ 'User-Agent': 'essa-alleth-edge-api' });
+  if (rangeHeader) h.set('Range', rangeHeader);
+  const upstream = await fetch(audioUrl, {
+    headers: h,
+    redirect: 'follow',
+    cf: { cacheTtl: 86400, cacheEverything: true },
+  });
+  if (!upstream.ok && upstream.status !== 206) {
+    return jsonResponse({ error: `Fallback CDN returned HTTP ${upstream.status}` }, 502);
   }
-  const getFileUrl = `https://api.telegram.org/bot${env.TELEGRAM_BOT_TOKEN}/getFile?file_id=${encodeURIComponent(telegramFileId)}`;
-  const metaRes = await fetch(getFileUrl, { cf: { cacheTtl: 1800, cacheEverything: true } });
-  const meta = await metaRes.json();
-  if (!metaRes.ok || !meta.ok || !meta.result?.file_path) {
-    return jsonResponse({ error: 'Telegram file_path unavailable.', details: meta.description }, 502);
-  }
-  const fileUrl = `https://api.telegram.org/file/bot${env.TELEGRAM_BOT_TOKEN}/${meta.result.file_path}`;
-  return streamFromDirectUrl(fileUrl, mimeType, rangeHeader, {});
+  const headers = new Headers(CORS_HEADERS);
+  headers.set('Content-Type', mimeType || 'audio/mpeg');
+  headers.set('Accept-Ranges', 'bytes');
+  headers.set('Cache-Control', 'public, max-age=86400');
+  const cl = upstream.headers.get('Content-Length');
+  const cr = upstream.headers.get('Content-Range');
+  if (cl) headers.set('Content-Length', cl);
+  if (cr) headers.set('Content-Range', cr);
+  return new Response(upstream.body, { status: upstream.status, headers });
+}
+
+function isAuthorizedUploader(request, env) {
+  const expected = (env.R2_UPLOAD_SECRET || '').trim();
+  if (!expected) return false;
+  const auth = request.headers.get('Authorization') || '';
+  return auth === `Bearer ${expected}`;
 }
 
 export default {
@@ -243,13 +214,47 @@ export default {
       const origin = url.origin;
       const channelName = env.SOURCE_CHANNEL_USERNAME || 'IssaAllaith';
 
+      // 0) نقطة الرفع الداخلية المحمية إلى Cloudflare R2 (يستدعيها محرك GitHub Actions فقط!)
+      const r2UploadMatch = pathname.match(/^\/v1\/internal\/r2\/(.+)$/);
+      if (r2UploadMatch) {
+        if (!env.AUDIO_BUCKET) {
+          return jsonResponse({ error: 'R2 Binding "AUDIO_BUCKET" is missing in Worker Settings.' }, 503);
+        }
+        if (!isAuthorizedUploader(request, env)) {
+          return jsonResponse({ error: 'Unauthorized R2 upload request.' }, 401);
+        }
+
+        const key = decodeURIComponent(r2UploadMatch[1]);
+
+        if (request.method === 'HEAD') {
+          const exists = await env.AUDIO_BUCKET.head(key);
+          if (!exists) return new Response(null, { status: 404, headers: CORS_HEADERS });
+          return new Response(null, {
+            status: 200,
+            headers: { ...CORS_HEADERS, 'Content-Length': String(exists.size) },
+          });
+        }
+
+        if (request.method === 'PUT') {
+          const obj = await env.AUDIO_BUCKET.put(key, request.body, {
+            httpMetadata: {
+              contentType: request.headers.get('Content-Type') || 'audio/mpeg',
+              cacheControl: 'public, max-age=31536000, immutable',
+            },
+          });
+          return jsonResponse({ ok: true, key: obj.key, sizeBytes: obj.size }, 200);
+        }
+
+        return jsonResponse({ error: 'Method Not Allowed' }, 405);
+      }
+
       if (!env.DB) {
         return jsonResponse({ error: 'D1 Binding "DB" is missing in Worker Settings.' }, 500);
       }
 
       await ensureSchema(env.DB);
 
-      // 1) فحص الصحة
+      // 1) فحص الصحة وحالة ربط R2
       if (pathname === '/' || pathname === '/v1/health') {
         const syncRow = await env.DB.prepare(
           `SELECT last_run_at, total_synced, last_status FROM sync_state WHERE channel_username = ? LIMIT 1`
@@ -261,25 +266,26 @@ export default {
           `SELECT COUNT(*) AS count FROM tracks WHERE is_deleted = 0`
         ).first();
 
-        const playableRow = await env.DB.prepare(
+        const r2CountRow = await env.DB.prepare(
           `SELECT COUNT(*) AS count FROM tracks
-           WHERE is_deleted = 0
-             AND ((r2_object_key IS NOT NULL AND r2_object_key != '') OR (telegram_file_id IS NOT NULL AND telegram_file_id != ''))`
+           WHERE is_deleted = 0 AND storage_provider = 'r2' AND r2_object_key LIKE 'audio/%'`
         ).first();
 
         return jsonResponse({
           status: syncRow?.last_status === 'error' ? 'degraded' : 'ok',
           service: 'essa-alleth-edge-api',
           sourceChannel: channelName,
-          storageMode: 'github',
+          storageMode: 'r2',
+          r2BucketBound: Boolean(env.AUDIO_BUCKET),
+          r2UploadSecretConfigured: Boolean(env.R2_UPLOAD_SECRET),
           lastSyncAt: syncRow?.last_run_at ?? null,
           totalTracks: countRow?.count ?? 0,
-          playableTracks: playableRow?.count ?? 0,
+          r2ReadyTracks: r2CountRow?.count ?? 0,
           timestamp: new Date().toISOString(),
         });
       }
 
-      // 2) المزامنة التفاضلية الكاملة (جميع المقاطع عبر الصفحات)
+      // 2) المزامنة التفاضلية الكاملة
       if (pathname === '/v1/sync') {
         const since = url.searchParams.get('since') || '1970-01-01T00:00:00.000Z';
         const limit = Math.min(500, Math.max(10, Number(url.searchParams.get('limit') || 250)));
@@ -347,14 +353,14 @@ export default {
         );
       }
 
-      // 4) بث/تحميل MP3 بـ HTTP 206 Range Requests من GitHub Releases CDN (أو Telegram)
+      // 4) بث فوري مباشر من Cloudflare R2 (مع دعم المقاطع القديمة مؤقتاً حتى اكتمال النقل)
       const streamMatch = pathname.match(/^\/v1\/tracks\/([^/]+)\/stream$/);
       if (streamMatch) {
         const id = decodeURIComponent(streamMatch[1]);
         const rangeHeader = request.headers.get('Range');
 
         const row = await env.DB.prepare(
-          `SELECT id, mime_type, storage_provider, r2_object_key, telegram_file_id
+          `SELECT id, mime_type, storage_provider, r2_object_key
            FROM tracks WHERE id = ? AND is_deleted = 0 LIMIT 1`
         )
           .bind(id)
@@ -364,29 +370,23 @@ export default {
           return jsonResponse({ error: 'Track not found' }, 404);
         }
 
-        if (!rangeHeader || rangeHeader.startsWith('bytes=0-')) {
+        if (request.method === 'GET' && (!rangeHeader || rangeHeader.startsWith('bytes=0-'))) {
           ctx.waitUntil(
             env.DB.prepare(`UPDATE tracks SET play_count = play_count + 1 WHERE id = ?`).bind(id).run()
           );
         }
 
-        // 1) الأولوية لبث GitHub Releases CDN (سريع جداً وصفر 429!)
+        // 1) بث مباشر فوري من Cloudflare R2
+        if (row.storage_provider === 'r2' && row.r2_object_key && env.AUDIO_BUCKET) {
+          return streamFromR2Bucket(env.AUDIO_BUCKET, row.r2_object_key, row.mime_type, request);
+        }
+
+        // 2) انتقال سلس: أي مقطع لم ينتقل بعد يواصل العمل مؤقتاً من رابطه القديم
         if (row.r2_object_key && row.r2_object_key.startsWith('http')) {
-          return streamFromDirectUrl(row.r2_object_key, row.mime_type, rangeHeader, env);
+          return streamFromDirectUrl(row.r2_object_key, row.mime_type, rangeHeader);
         }
 
-        // 2) بديل: Telegram file_id إن وُجد
-        if (row.telegram_file_id) {
-          return streamFromTelegram(env, row.telegram_file_id, row.mime_type, rangeHeader);
-        }
-
-        return jsonResponse(
-          {
-            error: 'Audio MP3 is still syncing to GitHub Releases.',
-            hint: 'Run the GitHub Actions "Automated Telegram Sync" workflow with mode=backfill to upload all MP3s automatically.',
-          },
-          404
-        );
+        return jsonResponse({ error: 'Audio MP3 is currently syncing to Cloudflare R2.' }, 404);
       }
 
       // 5) تفاصيل مقطع محدد

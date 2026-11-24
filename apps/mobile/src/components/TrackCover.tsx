@@ -4,6 +4,7 @@ import type { ArtworkPalette } from '@shared/types/track';
 
 interface TrackCoverProps {
   palette: ArtworkPalette;
+  coverUrl?: string | null;
   size?: number;
   borderRadius?: number;
   isPlaying?: boolean;
@@ -13,6 +14,7 @@ interface TrackCoverProps {
 
 export const TrackCover: React.FC<TrackCoverProps> = ({
   palette,
+  coverUrl,
   size = 54,
   borderRadius = 14,
   isPlaying = false,
@@ -20,6 +22,7 @@ export const TrackCover: React.FC<TrackCoverProps> = ({
   titleInitial,
 }) => {
   const gradId = `g_${palette.primary.replace('#', '')}_${palette.accent.replace('#', '')}_${size}`;
+  const glowId = `r_${palette.accent.replace('#', '')}_${size}`;
 
   return (
     <View
@@ -29,83 +32,102 @@ export const TrackCover: React.FC<TrackCoverProps> = ({
           width: size,
           height: size,
           borderRadius,
-          borderColor: isCurrent ? palette.accent : 'rgba(255,255,255,0.1)',
-          borderWidth: isCurrent ? 1.5 : 1,
+          borderColor: isCurrent ? palette.accent : 'rgba(255,255,255,0.16)',
+          borderWidth: isCurrent ? 1.8 : 1,
         },
       ]}
     >
-      <svg
-        width={size}
-        height={size}
-        viewBox="0 0 120 120"
-        style={{ display: 'block', borderRadius }}
-      >
-        <defs>
-          <linearGradient id={gradId} x1="0%" y1="0%" x2="100%" y2="100%">
-            <stop offset="0%" stopColor={palette.primary} />
-            <stop offset="100%" stopColor={palette.secondary} />
-          </linearGradient>
-        </defs>
-        <rect width="120" height="120" fill={`url(#${gradId})`} />
+      {coverUrl ? (
+        <img
+          src={coverUrl}
+          alt=""
+          style={{
+            width: size,
+            height: size,
+            objectFit: 'cover',
+            display: 'block',
+            borderRadius,
+          }}
+        />
+      ) : (
+        <svg
+          width={size}
+          height={size}
+          viewBox="0 0 120 120"
+          style={{ display: 'block', borderRadius }}
+        >
+          <defs>
+            <linearGradient id={gradId} x1="0%" y1="0%" x2="100%" y2="100%">
+              <stop offset="0%" stopColor={palette.primary} />
+              <stop offset="60%" stopColor={palette.secondary} />
+              <stop offset="100%" stopColor="#090C12" />
+            </linearGradient>
+            <radialGradient id={glowId} cx="78%" cy="22%" r="65%">
+              <stop offset="0%" stopColor={palette.accent} stopOpacity="0.42" />
+              <stop offset="100%" stopColor={palette.accent} stopOpacity="0" />
+            </radialGradient>
+          </defs>
 
-        {/* زخرفة هندسية عربية تراثية عصرية خفيفة */}
-        {palette.pattern === 'geometric' && (
-          <g opacity="0.22" stroke={palette.accent} strokeWidth="1.2" fill="none">
-            <polygon points="60,14 106,60 60,106 14,60" />
-            <rect x="28" y="28" width="64" height="64" />
-            <circle cx="60" cy="60" r="22" />
-          </g>
-        )}
-        {palette.pattern === 'arch' && (
-          <g opacity="0.24" stroke={palette.accent} strokeWidth="1.3" fill="none">
-            <path d="M24 106V54C24 30 60 16 60 16C60 16 96 30 96 54V106" />
-            <path d="M36 106V60C36 42 60 32 60 32C60 32 84 42 84 60V106" />
-            <circle cx="60" cy="62" r="10" />
-          </g>
-        )}
-        {palette.pattern === 'stars' && (
-          <g opacity="0.24" stroke={palette.accent} strokeWidth="1.2" fill="none">
-            <circle cx="60" cy="60" r="38" strokeDasharray="4 4" />
-            <polygon points="60,18 71,49 102,60 71,71 60,102 49,71 18,60 49,49" />
-          </g>
-        )}
-        {palette.pattern === 'waves' && (
-          <g opacity="0.26" stroke={palette.accent} strokeWidth="1.4" fill="none">
-            <path d="M0 44 Q30 28 60 44 T120 44" />
-            <path d="M0 64 Q30 48 60 64 T120 64" />
-            <path d="M0 84 Q30 68 60 84 T120 84" />
-          </g>
-        )}
+          <rect width="120" height="120" fill={`url(#${gradId})`} />
+          <rect width="120" height="120" fill={`url(#${glowId})`} />
 
-        {/* توهّج ناعم */}
-        <circle cx="96" cy="24" r="28" fill={palette.accent} opacity="0.14" />
+          {/* زخرفة هندسية واضحة وفخمة */}
+          {palette.pattern === 'geometric' && (
+            <g opacity="0.4" stroke={palette.accent} strokeWidth="1.5" fill="none">
+              <polygon points="60,12 108,60 60,108 12,60" />
+              <rect x="26" y="26" width="68" height="68" rx="6" />
+              <circle cx="60" cy="60" r="26" />
+            </g>
+          )}
+          {palette.pattern === 'arch' && (
+            <g opacity="0.42" stroke={palette.accent} strokeWidth="1.6" fill="none">
+              <path d="M22 108V54C22 28 60 14 60 14C60 14 98 28 98 54V108" />
+              <path d="M34 108V60C34 40 60 30 60 30C60 30 86 40 86 60V108" />
+            </g>
+          )}
+          {palette.pattern === 'stars' && (
+            <g opacity="0.4" stroke={palette.accent} strokeWidth="1.5" fill="none">
+              <circle cx="60" cy="60" r="42" strokeDasharray="5 4" />
+              <polygon points="60,16 72,48 104,60 72,72 60,104 48,72 16,60 48,48" />
+            </g>
+          )}
+          {palette.pattern === 'waves' && (
+            <g opacity="0.42" stroke={palette.accent} strokeWidth="1.7" fill="none">
+              <path d="M0 40 Q30 24 60 40 T120 40" />
+              <path d="M0 62 Q30 46 60 62 T120 62" />
+              <path d="M0 84 Q30 68 60 84 T120 84" />
+            </g>
+          )}
 
-        {/* موجة صوتية صغيرة في الوسط أو حرف أول أنيق */}
-        {!isPlaying && (
-          <g fill={palette.accent} opacity="0.92">
-            {size >= 140 && titleInitial ? (
-              <text
-                x="60"
-                y="68"
-                textAnchor="middle"
-                fontSize="36"
-                fontWeight="700"
-                fontFamily="Amiri, serif"
-              >
-                {titleInitial}
-              </text>
-            ) : (
-              <>
-                <rect x="44" y="54" width="4" height="16" rx="2" />
-                <rect x="52" y="42" width="4" height="36" rx="2" />
-                <rect x="60" y="34" width="4" height="52" rx="2" />
-                <rect x="68" y="46" width="4" height="28" rx="2" />
-                <rect x="76" y="56" width="4" height="12" rx="2" />
-              </>
-            )}
-          </g>
-        )}
-      </svg>
+          {/* شعار وسطي بارز وواضح */}
+          {!isPlaying && (
+            <g>
+              <circle cx="60" cy="60" r={size >= 140 ? 34 : 26} fill="rgba(10,12,16,0.52)" stroke={palette.accent} strokeWidth="1.4" strokeOpacity="0.65" />
+              {size >= 140 && titleInitial ? (
+                <text
+                  x="60"
+                  y="71"
+                  textAnchor="middle"
+                  fontSize="38"
+                  fontWeight="700"
+                  fill={palette.accent}
+                  fontFamily="Amiri, serif"
+                >
+                  {titleInitial}
+                </text>
+              ) : (
+                <g fill={palette.accent}>
+                  <rect x="44" y="54" width="4.5" height="14" rx="2.2" />
+                  <rect x="52" y="45" width="4.5" height="30" rx="2.2" />
+                  <rect x="60" y="39" width="4.5" height="42" rx="2.2" />
+                  <rect x="68" y="48" width="4.5" height="24" rx="2.2" />
+                  <rect x="76" y="56" width="4.5" height="10" rx="2.2" />
+                </g>
+              )}
+            </g>
+          )}
+        </svg>
+      )}
 
       {isPlaying && (
         <View style={styles.eqOverlay}>
@@ -114,14 +136,14 @@ export const TrackCover: React.FC<TrackCoverProps> = ({
               display: 'flex',
               alignItems: 'flex-end',
               gap: size >= 120 ? 6 : 3,
-              height: size >= 120 ? 36 : 18,
+              height: size >= 120 ? 38 : 18,
             }}
           >
             {[0, 0.16, 0.32, 0.12].map((delay, i) => (
               <span
                 key={i}
                 style={{
-                  width: size >= 120 ? 6 : 3,
+                  width: size >= 120 ? 6 : 3.2,
                   height: '100%',
                   borderRadius: 99,
                   backgroundColor: palette.accent,
@@ -147,9 +169,8 @@ const styles = StyleSheet.create({
   },
   eqOverlay: {
     ...StyleSheet.absoluteFillObject,
-    backgroundColor: 'rgba(8, 10, 15, 0.42)',
+    backgroundColor: 'rgba(8, 10, 15, 0.45)',
     justifyContent: 'center',
     alignItems: 'center',
   },
 });
-

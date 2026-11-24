@@ -5,6 +5,7 @@ import { loadConfig, type SyncConfig } from './config';
 import { CloudflareD1SyncClient } from './dbSync';
 import { mirrorAudioToPrivateChannel } from './storage/telegramMirror';
 import { GitHubReleaseAudioStore } from './storage/githubRelease';
+import { R2WorkerAudioStore } from './storage/r2WorkerUploader';
 import { normalizeArabic } from '../../../packages/shared/src/arabic/normalize';
 import { parseTelegramAudioPost } from '../../../packages/shared/src/arabic/lyricsParser';
 
@@ -106,6 +107,7 @@ async function withFloodWaitRetry<T>(label: string, fn: () => Promise<T>): Promi
 async function processBatch(
   client: TelegramClient,
   db: CloudflareD1SyncClient,
+  r2Store: R2WorkerAudioStore | null,
   githubStore: GitHubReleaseAudioStore | null,
   archivePeer: EntityLike | null,
   channelEntity: EntityLike,
@@ -137,14 +139,22 @@ async function processBatch(
 
     let telegramFileId: string | null = null;
     let telegramArchiveMsgId: number | null = null;
-    let audioObjectUrl: string | null = null;
+    let r2ObjectKey: string | null = null;
     let finalFileSizeBytes = audio.fileSizeBytes;
 
-    if (config.storageMode === 'github' && githubStore) {
+    if (config.storageMode === 'r2' && r2Store) {
+      const uploaded = await withFloodWaitRetry(`r2-upload #${msg.id}`, () =>
+        r2Store.uploadFromTelegramMessage(client, msg)
+      );
+      r2ObjectKey = uploaded.objectKey;
+      if (uploaded.sizeBytes > 0) {
+        finalFileSizeBytes = uploaded.sizeBytes;
+      }
+    } else if (config.storageMode === 'github' && githubStore) {
       const uploaded = await withFloodWaitRetry(`github-upload #${msg.id}`, () =>
         githubStore.uploadFromTelegramMessage(client, msg, audio.mimeType)
       );
-      audioObjectUrl = uploaded.audioUrl;
+      r2ObjectKey = uploaded.audioUrl;
       if (uploaded.sizeBytes > 0) {
         finalFileSizeBytes = uploaded.sizeBytes;
       }
@@ -176,11 +186,11 @@ async function processBatch(
       category: parsed.category,
       durationSec: audio.durationSec,
       fileSizeBytes: finalFileSizeBytes,
-      mimeType: config.storageMode === 'github' ? 'audio/mpeg' : audio.mimeType,
+      mimeType: config.storageMode === 'telegram' ? audio.mimeType : 'audio/mpeg',
       storageProvider: config.storageMode,
       telegramFileId,
       telegramArchiveMsgId,
-      r2ObjectKey: audioObjectUrl,
+      r2ObjectKey,
       publishedAt: publishedIso,
       lyricsRaw: parsed.lyricsRaw,
       lyricsNormalized: normalizeArabic(parsed.lyricsRaw),
@@ -189,21 +199,28 @@ async function processBatch(
 
     existingIds.add(msg.id);
     state.syncedCount++;
+    const tag =
+      config.storageMode === 'r2'
+        ? 'Cloudflare R2 ✓'
+        : config.storageMode === 'github'
+          ? 'GitHub CDN ✓'
+          : `أرشيف #${telegramArchiveMsgId}`;
     console.log(
-      `[telegram-sync] ✓ [#${state.syncedCount}] msg #${msg.id} — "${parsed.title}" (${parsed.lyricsRaw ? 'مع كلمات' : 'MP3'} | ${config.storageMode === 'github' ? 'GitHub CDN ✓' : `أرشيف #${telegramArchiveMsgId}`})`
+      `[telegram-sync] ✓ [#${state.syncedCount}] msg #${msg.id} — "${parsed.title}" (${parsed.lyricsRaw ? 'مع كلمات' : 'MP3'} | ${tag})`
     );
 
-    await sleep(config.storageMode === 'github' ? 400 : 900);
+    await sleep(config.storageMode === 'telegram' ? 900 : 300);
   }
 }
 
 async function main() {
   const config = loadConfig();
   const db = new CloudflareD1SyncClient(config);
+  const r2Store = config.storageMode === 'r2' ? new R2WorkerAudioStore(config) : null;
   const githubStore = config.storageMode === 'github' ? new GitHubReleaseAudioStore(config) : null;
 
   console.log(
-    `[telegram-sync] Starting ${config.syncMode} sync for @${config.sourceChannelUsername} (storage=${config.storageMode}, repo=${config.githubRepository})`
+    `[telegram-sync] Starting ${config.syncMode} sync for @${config.sourceChannelUsername} (storage=${config.storageMode})`
   );
 
   const client = new TelegramClient(
@@ -256,18 +273,27 @@ async function main() {
           })
         );
 
-        const batch = Array.from(rawBatch).filter((m): m is Api.Message => m instanceof Api.Message);
-        if (batch.length === 0) break;
+        const rawArray = Array.from(rawBatch);
+        if (rawArray.length === 0) break;
 
-        totalScanned += batch.length;
-        const oldestInBatch = batch[batch.length - 1].id;
+        const batch = rawArray.filter((m): m is Api.Message => m instanceof Api.Message);
+        const allIds = rawArray
+          .map((m) => (typeof m?.id === 'number' ? m.id : 0))
+          .filter((id) => id > 0);
+        if (allIds.length === 0) break;
+
+        const newestInBatch = Math.max(...allIds);
+        const oldestInBatch = Math.min(...allIds);
+
+        totalScanned += rawArray.length;
         console.log(
-          `[telegram-sync] Scanning batch: ${batch.length} msgs (IDs ${batch[0].id} -> ${oldestInBatch}) | Scanned: ${totalScanned} | Uploaded new: ${state.syncedCount} | Skipped ready: ${state.skippedCount}`
+          `[telegram-sync] Scanning batch: ${batch.length}/${rawArray.length} msgs (IDs ${newestInBatch} -> ${oldestInBatch}) | Scanned: ${totalScanned} | Uploaded new: ${state.syncedCount} | Skipped ready: ${state.skippedCount}`
         );
 
         await processBatch(
           client,
           db,
+          r2Store,
           githubStore,
           archivePeer,
           channelEntity,
@@ -285,11 +311,12 @@ async function main() {
           null
         );
 
-        if (batch.length < pageSize || oldestInBatch <= 1) {
+        // لا نتوقف أبداً بسبب رسالة خدمة أو رسالة محذوفة — نواصل حتى نصل فعلاً إلى أول رسالة في القناة (#1)!
+        if (oldestInBatch <= 1 || oldestInBatch === offsetId) {
           break;
         }
         offsetId = oldestInBatch;
-        await sleep(1000);
+        await sleep(600);
       }
     } else {
       const rawMessages = await client.getMessages(channelEntity, {
@@ -308,6 +335,7 @@ async function main() {
       await processBatch(
         client,
         db,
+        r2Store,
         githubStore,
         archivePeer,
         channelEntity,
@@ -327,7 +355,7 @@ async function main() {
     );
 
     console.log(
-      `[telegram-sync] ✓ Done! Newly synced: ${state.syncedCount} | Already ready: ${state.skippedCount} | Latest msg ID: #${state.highestMessageId}`
+      `[telegram-sync] ✓ Done! Newly synced to ${config.storageMode}: ${state.syncedCount} | Already ready: ${state.skippedCount} | Latest msg ID: #${state.highestMessageId}`
     );
   } catch (err) {
     const errorMessage = err instanceof Error ? err.message : String(err);
