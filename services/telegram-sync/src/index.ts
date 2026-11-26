@@ -66,15 +66,15 @@ function findCompanionLyricsMessage(
   audioMsg: Api.Message,
   batchMessages: Api.Message[]
 ): { text: string; messageId: number } | null {
-  const MAX_TIME_DIFF_SEC = 600;
+  const MAX_TIME_DIFF_SEC = 1800;
 
   const candidates = batchMessages.filter((m) => {
     if (m.id === audioMsg.id) return false;
     if (extractAudioFromMessage(m)) return false;
     const text = (m.message || '').trim();
-    if (text.length < 35) return false;
+    if (text.length < 30) return false;
     const timeDiff = Math.abs((m.date || 0) - (audioMsg.date || 0));
-    return timeDiff <= MAX_TIME_DIFF_SEC && Math.abs(m.id - audioMsg.id) <= 2;
+    return timeDiff <= MAX_TIME_DIFF_SEC && Math.abs(m.id - audioMsg.id) <= 4;
   });
 
   if (candidates.length === 0) return null;

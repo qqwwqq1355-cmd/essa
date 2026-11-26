@@ -19,6 +19,11 @@ function isCacheSupported(): boolean {
   return typeof window !== 'undefined' && 'caches' in window;
 }
 
+export function getMemoryCachedAudioUrl(streamUrl: string): string | null {
+  if (!streamUrl || streamUrl.startsWith('blob:')) return null;
+  return blobUrlMap.get(streamUrl) ?? null;
+}
+
 /**
  * يتحقق إن كان الملف الصوتي مخزّناً مسبقاً (أوفلاين) ويعيد رابط Blob محلي فوري
  */

@@ -2,7 +2,7 @@ import type { Track } from '@shared/types/track';
 import {
   abortBackgroundCaching,
   cacheAudioInBackground,
-  getCachedAudioUrl,
+  getMemoryCachedAudioUrl,
 } from './audioCache';
 import { pauseImageLoading, resumeImageLoading } from '../images/imageLoader';
 
@@ -43,6 +43,7 @@ class WebAudioEngine {
   private loadToken = 0;
   private pendingMetaHandler: (() => void) | null = null;
   private pendingCacheTimer: ReturnType<typeof setTimeout> | null = null;
+  private pendingCacheTarget: { url: string; trackId: string; token: number } | null = null;
 
   constructor() {
     this.audio = this.createAudioElement();
@@ -50,7 +51,7 @@ class WebAudioEngine {
 
   private createAudioElement(): HTMLAudioElement {
     const el = new Audio();
-    el.preload = 'metadata';
+    el.preload = 'auto';
 
     const getBufferedSec = () => {
       try {
@@ -98,8 +99,19 @@ class WebAudioEngine {
 
     el.addEventListener('playing', () => {
       if (this.audio !== el) return;
-      // بدأ الصوت فعلياً → نستأنف تحميل الصور بعد ثانية
+      // بدأ الصوت فعلياً → نستأنف تحميل الصور بعد ثانية، ونبدأ الحفظ الخلفي بعد 4 ثوانٍ فقط
       setTimeout(resumeImageLoading, 1000);
+      if (this.pendingCacheTarget && this.pendingCacheTarget.token === this.loadToken) {
+        const target = this.pendingCacheTarget;
+        this.pendingCacheTarget = null;
+        if (this.pendingCacheTimer) clearTimeout(this.pendingCacheTimer);
+        this.pendingCacheTimer = setTimeout(() => {
+          if (target.token !== this.loadToken || !this.wantToPlay) return;
+          cacheAudioInBackground(target.url, () => {
+            this.callbacks?.onTrackCached?.(target.trackId);
+          });
+        }, 15000);
+      }
       this.wantToPlay = true;
       this.callbacks?.onPlayStateChange(true, false);
       this.notifyNative(true);
@@ -244,25 +256,17 @@ class WebAudioEngine {
     this.audio = nextAudio;
     this.callbacks?.onPlayStateChange(true, true);
 
-    // إذا كان المقطع محفوظاً محلياً نُشغّله فوراً من الكاش أوفلاين، وإلا نُشغّله بالبث السريع أولاً
-    const cachedUrl = await getCachedAudioUrl(track.streamUrl);
-    if (token !== this.loadToken || this.audio !== nextAudio) return;
-
+    // تشغيل متزامن فوري (0ms بدون أي await قبل play) للحفاظ على استجابة النقر الفورية في Chrome!
+    const cachedUrl = getMemoryCachedAudioUrl(track.streamUrl);
     nextAudio.src = cachedUrl ?? track.streamUrl;
     nextAudio.playbackRate = playbackRate;
     this.updateMediaSessionMetadata(track);
 
-    // نؤخر الحفظ في الخلفية 3 ثوانٍ بعد بدء التشغيل حتى لا يزاحم سرعة فتح الزامل الفوري
-    if (!cachedUrl && track.storageProvider !== 'local') {
-      const urlToCache = track.streamUrl;
-      const trackIdToCache = track.id;
-      this.pendingCacheTimer = setTimeout(() => {
-        if (token !== this.loadToken || !this.wantToPlay) return;
-        cacheAudioInBackground(urlToCache, () => {
-          this.callbacks?.onTrackCached?.(trackIdToCache);
-        });
-      }, 3000);
-    }
+    // لا نبدأ الحفظ الخلفي إلا بعد أن يبدأ الصوت فعلياً (حدث playing) حتى لا يُرسل طلب ثانٍ أبداً أثناء الفتح!
+    this.pendingCacheTarget =
+      !cachedUrl && track.storageProvider !== 'local'
+        ? { url: track.streamUrl, trackId: track.id, token }
+        : null;
 
     if (startPositionSec > 0) {
       const applyStart = () => {

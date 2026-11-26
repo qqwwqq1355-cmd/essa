@@ -3,7 +3,7 @@
  * ويمكن إيقافه مؤقتاً (pause) لإعطاء الأولوية المطلقة لفتح الصوت ثم يستأنف تلقائياً.
  */
 
-const MAX_CONCURRENT = 4;
+const MAX_CONCURRENT = 2;
 const MAX_ATTEMPTS = 3;
 
 interface CoverTask {
@@ -12,16 +12,20 @@ interface CoverTask {
   attempts: number;
 }
 
-const loaded = new Set<string>();
+const loaded = new Map<string, string>(); // url -> blobUrl (أو url)
 const tasks = new Map<string, CoverTask>();
 const queue: CoverTask[] = [];
-const active = new Map<string, HTMLImageElement>();
+const active = new Map<string, AbortController>();
 
 let paused = false;
 let resumeTimer: ReturnType<typeof setTimeout> | null = null;
 
 export function isCoverLoaded(url: string): boolean {
   return loaded.has(url);
+}
+
+export function getLoadedCoverSrc(url: string): string {
+  return loaded.get(url) ?? url;
 }
 
 function notify(task: CoverTask, ok: boolean) {
@@ -39,34 +43,44 @@ function pump() {
 }
 
 function startTask(task: CoverTask) {
-  const img = new Image();
-  img.decoding = 'async';
-  active.set(task.url, img);
+  const controller = new AbortController();
+  active.set(task.url, controller);
 
-  img.onload = () => {
-    active.delete(task.url);
-    loaded.add(task.url);
-    notify(task, true);
-    pump();
-  };
-
-  img.onerror = () => {
-    active.delete(task.url);
-    task.attempts += 1;
-    if (task.attempts < MAX_ATTEMPTS && tasks.has(task.url)) {
-      setTimeout(() => {
-        if (tasks.has(task.url)) {
-          queue.push(task);
-          pump();
+  void fetch(task.url, { signal: controller.signal, mode: 'cors' })
+    .then((res) => {
+      if (!res.ok) throw new Error(`HTTP ${res.status}`);
+      return res.blob();
+    })
+    .then((blob) => {
+      active.delete(task.url);
+      if (blob.size < 100) throw new Error('empty');
+      const blobUrl = URL.createObjectURL(blob);
+      loaded.set(task.url, blobUrl);
+      notify(task, true);
+      pump();
+    })
+    .catch((err) => {
+      active.delete(task.url);
+      // إذا تم الإلغاء عمداً لإعطاء الأولوية للصوت، نعيده للطابور بدون احتساب فشل
+      if (err instanceof DOMException && err.name === 'AbortError') {
+        if (tasks.has(task.url) && !queue.includes(task)) {
+          queue.unshift(task);
         }
-      }, 700 * task.attempts);
-    } else {
-      notify(task, false);
-    }
-    pump();
-  };
-
-  img.src = task.url;
+        return;
+      }
+      task.attempts += 1;
+      if (task.attempts < MAX_ATTEMPTS && tasks.has(task.url)) {
+        setTimeout(() => {
+          if (tasks.has(task.url)) {
+            queue.push(task);
+            pump();
+          }
+        }, 700 * task.attempts);
+      } else {
+        notify(task, false);
+      }
+      pump();
+    });
 }
 
 /**
@@ -111,12 +125,11 @@ export function pauseImageLoading(maxPauseMs = 6000): void {
   paused = true;
   if (resumeTimer) clearTimeout(resumeTimer);
 
-  active.forEach((img, url) => {
-    img.onload = null;
-    img.onerror = null;
-    img.src = '';
+  // إلغاء فعلي فوري (AbortController) لكل طلبات الصور الجارية على مستوى الشبكة!
+  active.forEach((controller, url) => {
+    controller.abort();
     const task = tasks.get(url);
-    if (task) queue.unshift(task);
+    if (task && !queue.includes(task)) queue.unshift(task);
   });
   active.clear();
 

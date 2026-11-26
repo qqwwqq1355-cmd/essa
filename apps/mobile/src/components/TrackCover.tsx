@@ -1,7 +1,7 @@
 import React, { useEffect, useRef, useState } from 'react';
 import { StyleSheet, View } from 'react-native';
 import type { ArtworkPalette } from '@shared/types/track';
-import { isCoverLoaded, loadCover } from '../services/images/imageLoader';
+import { getLoadedCoverSrc, isCoverLoaded, loadCover } from '../services/images/imageLoader';
 
 interface TrackCoverProps {
   palette: ArtworkPalette;
@@ -104,7 +104,7 @@ export const TrackCover: React.FC<TrackCoverProps> = React.memo(({
       <div ref={anchorRef} style={{ width: size, height: size, position: 'relative' }}>
       {shouldRenderImg ? (
         <img
-          src={coverUrl!}
+          src={getLoadedCoverSrc(coverUrl!)}
           alt=""
           decoding="async"
           onError={() => setReady(false)}

@@ -59,6 +59,7 @@ jobs:
             echo "::warning::111.jpg not found in repository root!"
           fi
           npm install --no-audit --no-fund
+          node scripts/bundle-offline-catalog.mjs
           npm run build
 
       - name: Embed Built App into Android Assets

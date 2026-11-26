@@ -5,10 +5,12 @@ import { getDeterministicPalette } from '@shared/arabic/lyricsParser';
 import type { ThemeMode } from '../theme/tokens';
 import { audioEngine } from '../services/audio/AudioEngine';
 import {
+  abortBackgroundCaching,
   clearAllCachedAudio,
   removeCachedAudio,
   saveAudioToDevice,
 } from '../services/audio/audioCache';
+import { pauseImageLoading } from '../services/images/imageLoader';
 import { fetchDeltaSync, getDefaultApiBaseUrl } from '../services/api/syncClient';
 
 export type ActiveTab = 'home' | 'search' | 'library' | 'settings';
@@ -350,6 +352,10 @@ export const useAppStore = create<AppState>((set, get) => {
     },
 
     playTrack: async (trackId, queueOverride, openTab) => {
+      // إيقاف فوري لكل طلبات الصور والتنزيلات الخلفية قبل أي تحديث للحالة!
+      abortBackgroundCaching();
+      pauseImageLoading(6000);
+
       const state = get();
       const track = state.tracks.find((t) => t.id === trackId);
       if (!track) return;
@@ -631,8 +637,37 @@ export const useAppStore = create<AppState>((set, get) => {
       set({ isSyncing: true, syncError: null });
 
       try {
+        // 1) تحميل الفهرس والصور المدمجة داخل التطبيق فوراً (0ms أوفلاين!) إذا لم تكن القائمة محمّلة بعد
+        if (state.tracks.length === 0) {
+          try {
+            const localRes = await fetch('/offline/catalog.json');
+            if (localRes.ok) {
+              const localData = (await localRes.json()) as { tracks?: Track[] };
+              if (Array.isArray(localData.tracks) && localData.tracks.length > 0) {
+                set((s) => ({
+                  tracks: localData.tracks!,
+                  currentTrackId: s.currentTrackId ?? localData.tracks![0]?.id ?? null,
+                  queueIds: localData.tracks!.map((t) => t.id),
+                }));
+              }
+            }
+          } catch {
+            // تجاهل في بيئة التطوير إذا لم يُبنَ الفهرس المدمج بعد
+          }
+        }
+
         const response = await fetchDeltaSync(targetUrl);
-        const liveTracks = response.tracks.filter((t) => !t.isDeleted);
+        const existingCoverById = new Map(
+          get()
+            .tracks.filter((t) => t.coverUrl?.startsWith('/offline/covers/'))
+            .map((t) => [t.id, t.coverUrl!])
+        );
+        const liveTracks = response.tracks
+          .filter((t) => !t.isDeleted)
+          .map((t) => {
+            const bundledCover = existingCoverById.get(t.id);
+            return bundledCover ? { ...t, coverUrl: bundledCover } : t;
+          });
         const localImported = state.tracks.filter((t) => t.storageProvider === 'local');
         const combined = [...localImported, ...liveTracks];
         const now = response.serverTime || new Date().toISOString();
