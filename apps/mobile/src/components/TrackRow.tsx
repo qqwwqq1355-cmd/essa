@@ -22,7 +22,7 @@ interface TrackRowProps {
   onPlaylistPress: () => void;
 }
 
-export const TrackRow: React.FC<TrackRowProps> = ({
+export const TrackRow: React.FC<TrackRowProps> = React.memo(({
   track,
   theme,
   isCurrent,
@@ -159,7 +159,7 @@ export const TrackRow: React.FC<TrackRowProps> = ({
       </View>
     </Pressable>
   );
-};
+});
 
 const styles = StyleSheet.create({
   row: {

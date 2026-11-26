@@ -242,6 +242,17 @@ export const FullPlayerModal: React.FC<FullPlayerModalProps> = ({ theme }) => {
           <View style={styles.seekSection}>
             <View style={styles.seekBarWrap}>
               <View style={[styles.seekTrackBg, { backgroundColor: theme.borderStrong }]}>
+                {isBuffering && (
+                  <div
+                    style={{
+                      position: 'absolute',
+                      inset: 0,
+                      background: `linear-gradient(90deg, transparent 0%, ${theme.accent} 50%, transparent 100%)`,
+                      opacity: 0.65,
+                      animation: 'pulseGlow 1.1s ease-in-out infinite',
+                    }}
+                  />
+                )}
                 <View
                   style={[
                     styles.seekBufferedFill,

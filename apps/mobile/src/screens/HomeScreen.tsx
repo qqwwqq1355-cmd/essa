@@ -1,5 +1,6 @@
 import React, { useEffect, useMemo, useState } from 'react';
 import { ActivityIndicator, Pressable, ScrollView, StyleSheet, Text, View } from 'react-native';
+import { useShallow } from 'zustand/react/shallow';
 import type { TrackCategory } from '@shared/types/track';
 import { FONTS, RADIUS, type ThemePalette } from '../theme/tokens';
 import { useAppStore } from '../store/useAppStore';
@@ -12,6 +13,25 @@ interface HomeScreenProps {
   theme: ThemePalette;
 }
 
+type SortMode = 'newest' | 'popular' | 'oldest' | 'alpha';
+
+const SORT_OPTIONS: Array<{ id: SortMode; label: string }> = [
+  { id: 'newest', label: 'الأحدث' },
+  { id: 'popular', label: 'الأكثر استماعاً' },
+  { id: 'oldest', label: 'الأقدم' },
+  { id: 'alpha', label: 'الأبجدي' },
+];
+
+function isCleanPoetryLine(line: string): boolean {
+  const s = line.trim();
+  if (s.length < 6) return false;
+  if (/(https?:\/\/|www\.|x\.com|t\.me|mmy\.ye|twitter\.com|youtu\.be|youtube\.com|@[a-z0-9_]+)/i.test(s)) {
+    return false;
+  }
+  if (/^[\s\-_=•*#]+$/.test(s)) return false;
+  return true;
+}
+
 const CATEGORIES: Array<TrackCategory | 'الكل'> = [
   'الكل',
   'زوامل',
@@ -21,7 +41,7 @@ const CATEGORIES: Array<TrackCategory | 'الكل'> = [
   'مناسبات',
 ];
 
-export const HomeScreen: React.FC<HomeScreenProps> = ({ theme }) => {
+export const HomeScreen: React.FC<HomeScreenProps> = React.memo(({ theme }) => {
   const {
     tracks,
     selectedCategory,
@@ -44,41 +64,92 @@ export const HomeScreen: React.FC<HomeScreenProps> = ({ theme }) => {
     openLyricsShare,
     openPlaylistPicker,
     syncError,
-  } = useAppStore();
+  } = useAppStore(
+    useShallow((s) => ({
+      tracks: s.tracks,
+      selectedCategory: s.selectedCategory,
+      setSelectedCategory: s.setSelectedCategory,
+      currentTrackId: s.currentTrackId,
+      isPlaying: s.isPlaying,
+      favorites: s.favorites,
+      downloadedIds: s.downloadedIds,
+      downloadingIds: s.downloadingIds,
+      playProgress: s.playProgress,
+      isSyncing: s.isSyncing,
+      connectionMode: s.connectionMode,
+      lastSyncAt: s.lastSyncAt,
+      toggleTheme: s.toggleTheme,
+      syncWithTelegramApi: s.syncWithTelegramApi,
+      playTrack: s.playTrack,
+      toggleFavorite: s.toggleFavorite,
+      downloadTrack: s.downloadTrack,
+      removeDownload: s.removeDownload,
+      openLyricsShare: s.openLyricsShare,
+      openPlaylistPicker: s.openPlaylistPicker,
+      syncError: s.syncError,
+    }))
+  );
 
-  const featuredTrack = tracks[0];
+  const [sortMode, setSortMode] = useState<SortMode>('newest');
+
+  const sortedAllTracks = useMemo(() => {
+    const copy = [...tracks];
+    copy.sort((a, b) => {
+      const timeDiff = new Date(b.publishedAt).getTime() - new Date(a.publishedAt).getTime();
+      if (timeDiff !== 0) return timeDiff;
+      return (b.sourceMessageId || 0) - (a.sourceMessageId || 0);
+    });
+    return copy;
+  }, [tracks]);
+
+  const featuredTrack = sortedAllTracks[0];
 
   const filteredTracks = useMemo(() => {
-    if (selectedCategory === 'الكل') return tracks;
-    return tracks.filter((t) => t.category === selectedCategory);
-  }, [tracks, selectedCategory]);
+    const base =
+      selectedCategory === 'الكل'
+        ? [...sortedAllTracks]
+        : sortedAllTracks.filter((t) => t.category === selectedCategory);
+
+    if (sortMode === 'popular') {
+      base.sort((a, b) => (b.playCount || 0) - (a.playCount || 0));
+    } else if (sortMode === 'oldest') {
+      base.reverse();
+    } else if (sortMode === 'alpha') {
+      base.sort((a, b) => a.title.localeCompare(b.title, 'ar'));
+    }
+    return base;
+  }, [sortedAllTracks, selectedCategory, sortMode]);
 
   // عرض تدريجي فائق السلاسة (40 مقطعاً في كل دفعة لضمان 60/120 FPS حتى مع آلاف الزوامل)
   const [visibleCount, setVisibleCount] = useState(40);
   useEffect(() => {
     setVisibleCount(40);
-  }, [selectedCategory]);
+  }, [selectedCategory, sortMode]);
   const visibleTracks = useMemo(
     () => filteredTracks.slice(0, visibleCount),
     [filteredTracks, visibleCount]
   );
 
   const continueListening = useMemo(() => {
-    return tracks.filter((t) => {
+    return sortedAllTracks.filter((t) => {
       const p = playProgress[t.id] || 0;
       return p > 3 && p < t.durationSec - 3;
     });
-  }, [tracks, playProgress]);
+  }, [sortedAllTracks, playProgress]);
 
-  const dailyQuoteTrack = useMemo(
-    () => tracks.find((t) => t.hasLyrics && (t.lyrics || '').trim().length > 20) || null,
-    [tracks]
-  );
-  const dailyQuoteLines = (dailyQuoteTrack?.lyrics || '')
-    .split('\n')
-    .map((l) => l.trim())
-    .filter(Boolean)
-    .slice(0, 2);
+  const { dailyQuoteTrack, dailyQuoteLines } = useMemo(() => {
+    for (const t of sortedAllTracks) {
+      if (!t.hasLyrics || !t.lyrics) continue;
+      const cleanLines = t.lyrics
+        .split('\n')
+        .map((l) => l.trim())
+        .filter(isCleanPoetryLine);
+      if (cleanLines.length >= 2) {
+        return { dailyQuoteTrack: t, dailyQuoteLines: cleanLines.slice(0, 2) };
+      }
+    }
+    return { dailyQuoteTrack: null, dailyQuoteLines: [] as string[] };
+  }, [sortedAllTracks]);
 
   const filteredIds = useMemo(() => filteredTracks.map((t) => t.id), [filteredTracks]);
 
@@ -101,8 +172,8 @@ export const HomeScreen: React.FC<HomeScreenProps> = ({ theme }) => {
             />
             <Text style={[styles.syncStatusText, { color: theme.textSecondary }]}>
               {connectionMode === 'live'
-                ? `متزامن مع @IssaAllaith • ${lastSyncAt ? formatRelativeArabicDate(lastSyncAt) : 'مباشر'}`
-                : `الوضع المحلي (أوفلاين) • @IssaAllaith`}
+                ? 'مكتبة الزوامل والأناشيد الكاملة'
+                : 'الوضع المحلي (بدون إنترنت)'}
             </Text>
           </View>
         </View>
@@ -181,8 +252,8 @@ export const HomeScreen: React.FC<HomeScreenProps> = ({ theme }) => {
         >
           <View style={styles.heroTopRow}>
             <View style={[styles.heroPill, { backgroundColor: 'rgba(226,168,75,0.2)' }]}>
-              <Icon name="telegram" size={13} color="#F2C16B" />
-              <Text style={styles.heroPillText}>الأحدث من القناة الرسمية</Text>
+              <Icon name="sparkles" size={13} color="#F2C16B" />
+              <Text style={styles.heroPillText}>أحدث إصدار</Text>
             </View>
             <Text style={styles.heroDate}>
               {formatRelativeArabicDate(featuredTrack.publishedAt)}
@@ -192,6 +263,7 @@ export const HomeScreen: React.FC<HomeScreenProps> = ({ theme }) => {
           <View style={styles.heroMain}>
             <TrackCover
               palette={featuredTrack.palette}
+              coverUrl={featuredTrack.coverUrl}
               size={78}
               borderRadius={18}
               isCurrent={currentTrackId === featuredTrack.id}
@@ -248,7 +320,14 @@ export const HomeScreen: React.FC<HomeScreenProps> = ({ theme }) => {
                   onPress={() => void playTrack(t.id)}
                   style={[styles.continueCard, { backgroundColor: theme.surface, borderColor: theme.border }]}
                 >
-                  <TrackCover palette={t.palette} size={46} borderRadius={12} />
+                  <TrackCover
+                    palette={t.palette}
+                    coverUrl={t.coverUrl}
+                    size={46}
+                    borderRadius={12}
+                    isCurrent={currentTrackId === t.id}
+                    isPlaying={currentTrackId === t.id && isPlaying}
+                  />
                   <View style={styles.continueMeta}>
                     <Text style={[styles.continueTitle, { color: theme.textPrimary }]} numberOfLines={1}>
                       {t.title}
@@ -301,6 +380,35 @@ export const HomeScreen: React.FC<HomeScreenProps> = ({ theme }) => {
               );
             })}
           </ScrollView>
+
+          {/* شريط الفرز (الافتراضي: الأحدث) */}
+          <View style={styles.sortRow}>
+            {SORT_OPTIONS.map((opt) => {
+              const active = sortMode === opt.id;
+              return (
+                <Pressable
+                  key={opt.id}
+                  onPress={() => setSortMode(opt.id)}
+                  style={[
+                    styles.sortChip,
+                    {
+                      backgroundColor: active ? theme.accentSoft : 'transparent',
+                      borderColor: active ? theme.accent : theme.border,
+                    },
+                  ]}
+                >
+                  <Text
+                    style={[
+                      styles.sortChipText,
+                      { color: active ? theme.accent : theme.textSecondary },
+                    ]}
+                  >
+                    {opt.label}
+                  </Text>
+                </Pressable>
+              );
+            })}
+          </View>
 
           <View style={styles.section}>
             <View style={styles.sectionHeader}>
@@ -388,7 +496,7 @@ export const HomeScreen: React.FC<HomeScreenProps> = ({ theme }) => {
       )}
     </ScrollView>
   );
-};
+});
 
 const styles = StyleSheet.create({
   scroll: {
@@ -635,6 +743,23 @@ const styles = StyleSheet.create({
   chipsRow: {
     gap: 8,
     paddingVertical: 2,
+  },
+  sortRow: {
+    flexDirection: 'row',
+    flexWrap: 'wrap',
+    gap: 7,
+    alignItems: 'center',
+  },
+  sortChip: {
+    paddingHorizontal: 11,
+    paddingVertical: 5,
+    borderRadius: RADIUS.full,
+    borderWidth: 1,
+  },
+  sortChipText: {
+    fontFamily: FONTS.ui,
+    fontSize: 11.5,
+    fontWeight: '600',
   },
   catChip: {
     paddingHorizontal: 14,

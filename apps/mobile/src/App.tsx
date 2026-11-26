@@ -1,5 +1,6 @@
 import React, { useEffect, useMemo, useRef } from 'react';
 import { StyleSheet, View } from 'react-native';
+import { useShallow } from 'zustand/react/shallow';
 import { DARK_THEME, LIGHT_THEME } from './theme/tokens';
 import { useAppStore } from './store/useAppStore';
 import { WebDeviceFrame } from './components/WebDeviceFrame';
@@ -15,6 +16,7 @@ import { LibraryScreen } from './screens/LibraryScreen';
 import { SettingsScreen } from './screens/SettingsScreen';
 
 export const App: React.FC = () => {
+  // اشتراك انتقائي (Selector) حتى لا تعيد الشاشة الرئيسية الرسم عند كل تحديث لوقت الصوت!
   const {
     theme: themeMode,
     activeTab,
@@ -25,25 +27,43 @@ export const App: React.FC = () => {
     currentTrackId,
     isPlaying,
     isBuffering,
-    positionSec,
-    durationSec,
-    bufferedSec,
     favorites,
     toast,
     isPlayerOpen,
     lyricsShareTrackId,
     playlistPickerTrackId,
     openPlayer,
-    closePlayer,
-    closeLyricsShare,
-    closePlaylistPicker,
     togglePlayPause,
     playNext,
     toggleFavorite,
     apiBaseUrl,
     syncWithTelegramApi,
     showToast,
-  } = useAppStore();
+  } = useAppStore(
+    useShallow((s) => ({
+      theme: s.theme,
+      activeTab: s.activeTab,
+      setActiveTab: s.setActiveTab,
+      toggleTheme: s.toggleTheme,
+      connectionMode: s.connectionMode,
+      tracks: s.tracks,
+      currentTrackId: s.currentTrackId,
+      isPlaying: s.isPlaying,
+      isBuffering: s.isBuffering,
+      favorites: s.favorites,
+      toast: s.toast,
+      isPlayerOpen: s.isPlayerOpen,
+      lyricsShareTrackId: s.lyricsShareTrackId,
+      playlistPickerTrackId: s.playlistPickerTrackId,
+      openPlayer: s.openPlayer,
+      togglePlayPause: s.togglePlayPause,
+      playNext: s.playNext,
+      toggleFavorite: s.toggleFavorite,
+      apiBaseUrl: s.apiBaseUrl,
+      syncWithTelegramApi: s.syncWithTelegramApi,
+      showToast: s.showToast,
+    }))
+  );
 
   const lastBackPressRef = useRef<number>(0);
 
@@ -155,9 +175,6 @@ export const App: React.FC = () => {
             theme={theme}
             isPlaying={isPlaying}
             isBuffering={isBuffering}
-            positionSec={positionSec}
-            durationSec={durationSec || currentTrack.durationSec}
-            bufferedSec={bufferedSec}
             isFavorite={favorites.includes(currentTrack.id)}
             onOpenFull={() => openPlayer('player')}
             onOpenLyrics={() => openPlayer('lyrics')}

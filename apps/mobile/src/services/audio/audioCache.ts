@@ -3,6 +3,17 @@ const AUDIO_CACHE_NAME = 'essa-alleth-audio-v1';
 // خريطة روابط Blob المؤقتة في الذاكرة لتسريع إعادة التشغيل الفوري
 const blobUrlMap = new Map<string, string>();
 const inFlightUrls = new Set<string>();
+let activeBgController: AbortController | null = null;
+
+/**
+ * إلغاء أي تنزيل خلفي جارٍ فوراً عند الانتقال لزامل جديد حتى يحصل الزامل الجديد على 100% من سرعة الإنترنت
+ */
+export function abortBackgroundCaching(): void {
+  if (activeBgController) {
+    activeBgController.abort();
+    activeBgController = null;
+  }
+}
 
 function isCacheSupported(): boolean {
   return typeof window !== 'undefined' && 'caches' in window;
@@ -45,6 +56,9 @@ export function cacheAudioInBackground(
   if (!streamUrl || streamUrl.startsWith('blob:') || !isCacheSupported()) return;
   if (blobUrlMap.has(streamUrl) || inFlightUrls.has(streamUrl)) return;
 
+  abortBackgroundCaching();
+  const controller = new AbortController();
+  activeBgController = controller;
   inFlightUrls.add(streamUrl);
 
   void (async () => {
@@ -56,15 +70,21 @@ export function cacheAudioInBackground(
         return;
       }
 
-      const response = await fetch(streamUrl, { mode: 'cors' });
+      const response = await fetch(streamUrl, {
+        mode: 'cors',
+        signal: controller.signal,
+      });
       if (!response.ok) return;
 
       await cache.put(streamUrl, response.clone());
       onCached?.();
     } catch {
-      // تجاهل أخطاء الشبكة أو CORS بصمت حتى لا يتأثر التشغيل
+      // تجاهل أخطاء الشبكة أو الإلغاء بصمت حتى لا يتأثر التشغيل
     } finally {
       inFlightUrls.delete(streamUrl);
+      if (activeBgController === controller) {
+        activeBgController = null;
+      }
     }
   })();
 }

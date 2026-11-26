@@ -1,5 +1,5 @@
-import React, { useState } from 'react';
-import { Linking, Pressable, ScrollView, StyleSheet, Text, TextInput, View } from 'react-native';
+import React from 'react';
+import { Pressable, ScrollView, StyleSheet, Text, View } from 'react-native';
 import { FONTS, RADIUS, type ThemePalette } from '../theme/tokens';
 import { useAppStore } from '../store/useAppStore';
 import { formatRelativeArabicDate } from '../utils/format';
@@ -9,16 +9,11 @@ interface SettingsScreenProps {
   theme: ThemePalette;
 }
 
-const TELEGRAM_CHANNEL_URL =
-  import.meta.env.VITE_TELEGRAM_CHANNEL_URL || 'https://t.me/IssaAllaith';
-
 export const SettingsScreen: React.FC<SettingsScreenProps> = ({ theme }) => {
   const {
-    apiBaseUrl,
     connectionMode,
     lastSyncAt,
     isSyncing,
-    syncError,
     tracks,
     downloadedIds,
     lyricsFontSize,
@@ -30,17 +25,9 @@ export const SettingsScreen: React.FC<SettingsScreenProps> = ({ theme }) => {
     toggleKeepScreenAwake,
     toggleNotifications,
     setCacheLimitMb,
-    setApiBaseUrl,
     syncWithTelegramApi,
     clearAllDownloads,
   } = useAppStore();
-
-  const [urlDraft, setUrlDraft] = useState(apiBaseUrl);
-
-  const handleSaveAndSync = () => {
-    setApiBaseUrl(urlDraft);
-    void syncWithTelegramApi(urlDraft);
-  };
 
   return (
     <ScrollView
@@ -48,21 +35,21 @@ export const SettingsScreen: React.FC<SettingsScreenProps> = ({ theme }) => {
       contentContainerStyle={styles.container}
       showsVerticalScrollIndicator={false}
     >
-      <Text style={[styles.heading, { color: theme.textPrimary }]}>الإعدادات والربط</Text>
+      <Text style={[styles.heading, { color: theme.textPrimary }]}>الإعدادات</Text>
 
-      {/* بطاقة ربط قناة تليجرام الرسمية */}
+      {/* بطاقة تحديث المكتبة */}
       <View style={[styles.card, { backgroundColor: theme.surface, borderColor: theme.border }]}>
         <View style={styles.cardHeadRow}>
           <View style={styles.rowGap}>
-            <View style={[styles.badgeCircle, { backgroundColor: 'rgba(38,165,228,0.16)' }]}>
-              <Icon name="telegram" size={18} color="#29A9EB" />
+            <View style={[styles.badgeCircle, { backgroundColor: theme.accentSoft }]}>
+              <Icon name="sync" size={18} color={theme.accent} />
             </View>
             <View>
               <Text style={[styles.cardTitle, { color: theme.textPrimary }]}>
-                ربط قناة تليجرام الرسمية
+                تحديث المكتبة الصوتية
               </Text>
               <Text style={[styles.cardSub, { color: theme.textSecondary }]}>
-                https://t.me/IssaAllaith
+                {tracks.length} زامل متوفر • آخر تحديث: {lastSyncAt ? formatRelativeArabicDate(lastSyncAt) : 'الآن'}
               </Text>
             </View>
           </View>
@@ -84,65 +71,16 @@ export const SettingsScreen: React.FC<SettingsScreenProps> = ({ theme }) => {
           </View>
         </View>
 
-        <Text style={[styles.helpText, { color: theme.textSecondary }]}>
-          المزامنة التلقائية تسحب المقاطع والكلمات من القناة العامة عبر محرك الأتمتة وتبثها للتطبيق بأمان عبر Cloudflare Edge API دون تخزين أي مفاتيح سرية داخل التطبيق.
-        </Text>
-
-        <View style={styles.inputGroup}>
-          <Text style={[styles.inputLabel, { color: theme.textSecondary }]}>
-            رابط طبقة Edge API (Cloudflare Workers):
+        <Pressable
+          onPress={() => void syncWithTelegramApi()}
+          disabled={isSyncing}
+          style={[styles.primaryBtn, { backgroundColor: theme.accent, opacity: isSyncing ? 0.7 : 1 }]}
+        >
+          <Icon name="sync" size={16} color={theme.accentText} />
+          <Text style={[styles.primaryBtnText, { color: theme.accentText }]}>
+            {isSyncing ? 'جاري التحقق من الجديد...' : 'التحقق من وجود زوامل جديدة'}
           </Text>
-          <TextInput
-            value={urlDraft}
-            onChangeText={setUrlDraft}
-            placeholder="https://essa-alleth-edge-api.your-name.workers.dev"
-            placeholderTextColor={theme.textMuted}
-            autoCapitalize="none"
-            autoCorrect={false}
-            style={[
-              styles.urlInput,
-              {
-                backgroundColor: theme.bg,
-                borderColor: theme.borderStrong,
-                color: theme.textPrimary,
-              },
-            ]}
-          />
-        </View>
-
-        {syncError && (
-          <Text style={[styles.errorText, { color: theme.danger }]}>{syncError}</Text>
-        )}
-
-        <View style={styles.btnRow}>
-          <Pressable
-            onPress={handleSaveAndSync}
-            disabled={isSyncing}
-            style={[styles.primaryBtn, { backgroundColor: theme.accent, opacity: isSyncing ? 0.7 : 1 }]}
-          >
-            <Icon name="sync" size={16} color={theme.accentText} />
-            <Text style={[styles.primaryBtnText, { color: theme.accentText }]}>
-              {isSyncing ? 'جاري المزامنة...' : 'حفظ ومزامنة الآن'}
-            </Text>
-          </Pressable>
-
-          <Pressable
-            onPress={() => void Linking.openURL(TELEGRAM_CHANNEL_URL)}
-            style={[styles.secondaryBtn, { backgroundColor: theme.surfaceAlt, borderColor: theme.border }]}
-          >
-            <Icon name="external" size={15} color={theme.textPrimary} />
-            <Text style={[styles.secondaryBtnText, { color: theme.textPrimary }]}>فتح القناة</Text>
-          </Pressable>
-        </View>
-
-        <View style={[styles.statsFooter, { borderTopColor: theme.border }]}>
-          <Text style={[styles.statItem, { color: theme.textMuted }]}>
-            المقاطع المفهرسة: {tracks.length}
-          </Text>
-          <Text style={[styles.statItem, { color: theme.textMuted }]}>
-            آخر مزامنة: {lastSyncAt ? formatRelativeArabicDate(lastSyncAt) : 'لم تتم بعد'}
-          </Text>
-        </View>
+        </Pressable>
       </View>
 
       {/* المظهر وقراءة الكلمات */}
@@ -262,7 +200,7 @@ export const SettingsScreen: React.FC<SettingsScreenProps> = ({ theme }) => {
               إشعارات المقاطع الجديدة
             </Text>
             <Text style={[styles.settingSub, { color: theme.textSecondary }]}>
-              تنبيه فوري عند نزول مقطع جديد في @IssaAllaith
+              تنبيه فوري عند توفر زامل جديد في المكتبة
             </Text>
           </View>
           <View
@@ -293,19 +231,13 @@ export const SettingsScreen: React.FC<SettingsScreenProps> = ({ theme }) => {
         </Pressable>
       </View>
 
-      {/* بطاقة المواصفات الهندسية للتطبيق */}
+      {/* عن التطبيق */}
       <View style={[styles.card, { backgroundColor: theme.surface, borderColor: theme.border }]}>
-        <Text style={[styles.sectionHeading, { color: theme.accent }]}>حول التطبيق والجاهزية</Text>
+        <Text style={[styles.sectionHeading, { color: theme.accent }]}>عن التطبيق</Text>
         <Text style={[styles.aboutLine, { color: theme.textSecondary }]}>
-          • البنية: React Native (نقي بدون Expo) + React Native Web (Vite)
+          مكتبة عيسى الليث الصوتية — استماع فوري، كلمات القصائد، وحفظ للاستماع بدون إنترنت.
         </Text>
-        <Text style={[styles.aboutLine, { color: theme.textSecondary }]}>
-          • توافق أندرويد المستهدف: Android 7.0 (API 24) حتى Android 15+ (API 35)
-        </Text>
-        <Text style={[styles.aboutLine, { color: theme.textSecondary }]}>
-          • الأمان: صفر مفاتيح سرية داخل التطبيق — بث محمي عبر Cloudflare Workers
-        </Text>
-        <Text style={[styles.aboutLine, { color: theme.textMuted }]}>الإصدار 1.0.0 — جاهز للربط التجاري</Text>
+        <Text style={[styles.aboutLine, { color: theme.textMuted }]}>الإصدار 1.0.0</Text>
       </View>
     </ScrollView>
   );

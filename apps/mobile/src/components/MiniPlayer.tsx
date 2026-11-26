@@ -1,7 +1,9 @@
 import React from 'react';
 import { Pressable, StyleSheet, Text, View } from 'react-native';
+import { useShallow } from 'zustand/react/shallow';
 import type { Track } from '@shared/types/track';
 import { FONTS, RADIUS, type ThemePalette } from '../theme/tokens';
+import { useAppStore } from '../store/useAppStore';
 import { formatDuration } from '../utils/format';
 import { TrackCover } from './TrackCover';
 import { Icon } from './Icon';
@@ -11,9 +13,6 @@ interface MiniPlayerProps {
   theme: ThemePalette;
   isPlaying: boolean;
   isBuffering?: boolean;
-  positionSec: number;
-  durationSec: number;
-  bufferedSec?: number;
   isFavorite: boolean;
   onOpenFull: () => void;
   onOpenLyrics: () => void;
@@ -22,14 +21,11 @@ interface MiniPlayerProps {
   onToggleFavorite: () => void;
 }
 
-export const MiniPlayer: React.FC<MiniPlayerProps> = ({
+export const MiniPlayer: React.FC<MiniPlayerProps> = React.memo(({
   track,
   theme,
   isPlaying,
   isBuffering = false,
-  positionSec,
-  durationSec,
-  bufferedSec = 0,
   isFavorite,
   onOpenFull,
   onOpenLyrics,
@@ -37,6 +33,13 @@ export const MiniPlayer: React.FC<MiniPlayerProps> = ({
   onNext,
   onToggleFavorite,
 }) => {
+  const { positionSec, durationSec, bufferedSec } = useAppStore(
+    useShallow((s) => ({
+      positionSec: s.positionSec,
+      durationSec: s.durationSec,
+      bufferedSec: s.bufferedSec,
+    }))
+  );
   const safeDur = durationSec > 0 ? durationSec : track.durationSec || 0;
   const pct = safeDur > 0 ? Math.min(100, Math.max(0, (positionSec / safeDur) * 100)) : 0;
   const bufPct = safeDur > 0 ? Math.min(100, Math.max(pct, (bufferedSec / safeDur) * 100)) : 0;
@@ -56,20 +59,34 @@ export const MiniPlayer: React.FC<MiniPlayerProps> = ({
         accessibilityRole="button"
         accessibilityLabel={`فتح المشغل الكامل لـ ${track.title}`}
       >
-        {/* شريط التقدم المزدوج (التحميل المسبق + التشغيل) */}
+        {/* شريط التقدم المزدوج + مؤشر تحميل متحرك عصري أثناء البفرنق */}
         <View style={[styles.progressTrack, { backgroundColor: theme.border }]}>
-          <View
-            style={[
-              styles.progressBuffered,
-              { width: `${bufPct}%`, backgroundColor: theme.textMuted },
-            ]}
-          />
-          <View
-            style={[
-              styles.progressFill,
-              { width: `${pct}%`, backgroundColor: theme.accent },
-            ]}
-          />
+          {isBuffering ? (
+            <div
+              style={{
+                position: 'absolute',
+                inset: 0,
+                background: `linear-gradient(90deg, transparent 0%, ${theme.accent} 50%, transparent 100%)`,
+                backgroundSize: '200% 100%',
+                animation: 'pulseGlow 1.1s ease-in-out infinite',
+              }}
+            />
+          ) : (
+            <>
+              <View
+                style={[
+                  styles.progressBuffered,
+                  { width: `${bufPct}%`, backgroundColor: theme.textMuted },
+                ]}
+              />
+              <View
+                style={[
+                  styles.progressFill,
+                  { width: `${pct}%`, backgroundColor: theme.accent },
+                ]}
+              />
+            </>
+          )}
         </View>
 
         <View style={styles.content}>
@@ -157,7 +174,7 @@ export const MiniPlayer: React.FC<MiniPlayerProps> = ({
       </Pressable>
     </View>
   );
-};
+});
 
 const styles = StyleSheet.create({
   outer: {

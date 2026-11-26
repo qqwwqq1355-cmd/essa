@@ -1,4 +1,4 @@
-import React from 'react';
+import React, { useEffect, useRef, useState } from 'react';
 import { StyleSheet, View } from 'react-native';
 import type { ArtworkPalette } from '@shared/types/track';
 
@@ -12,7 +12,7 @@ interface TrackCoverProps {
   titleInitial?: string;
 }
 
-export const TrackCover: React.FC<TrackCoverProps> = ({
+export const TrackCover: React.FC<TrackCoverProps> = React.memo(({
   palette,
   coverUrl,
   size = 54,
@@ -23,6 +23,30 @@ export const TrackCover: React.FC<TrackCoverProps> = ({
 }) => {
   const gradId = `g_${palette.primary.replace('#', '')}_${palette.accent.replace('#', '')}_${size}`;
   const glowId = `r_${palette.accent.replace('#', '')}_${size}`;
+  const [inView, setInView] = useState(size >= 100 || isCurrent);
+  const anchorRef = useRef<HTMLDivElement | null>(null);
+
+  useEffect(() => {
+    if (inView || !coverUrl) return;
+    const el = anchorRef.current;
+    if (!el || typeof IntersectionObserver === 'undefined') {
+      setInView(true);
+      return;
+    }
+    const obs = new IntersectionObserver(
+      (entries) => {
+        if (entries[0]?.isIntersecting) {
+          setInView(true);
+          obs.disconnect();
+        }
+      },
+      { rootMargin: '120px' }
+    );
+    obs.observe(el);
+    return () => obs.disconnect();
+  }, [inView, coverUrl]);
+
+  const shouldRenderImg = Boolean(coverUrl && inView);
 
   return (
     <View
@@ -37,12 +61,14 @@ export const TrackCover: React.FC<TrackCoverProps> = ({
         },
       ]}
     >
-      {coverUrl ? (
+      <div ref={anchorRef} style={{ width: size, height: size, position: 'relative' }}>
+      {shouldRenderImg ? (
         <img
-          src={coverUrl}
+          src={coverUrl!}
           alt=""
           loading="lazy"
           decoding="async"
+          fetchPriority="low"
           style={{
             width: size,
             height: size,
@@ -130,6 +156,7 @@ export const TrackCover: React.FC<TrackCoverProps> = ({
           )}
         </svg>
       )}
+      </div>
 
       {isPlaying && (
         <View style={styles.eqOverlay}>
@@ -159,7 +186,7 @@ export const TrackCover: React.FC<TrackCoverProps> = ({
       )}
     </View>
   );
-};
+});
 
 const styles = StyleSheet.create({
   wrapper: {

@@ -1,5 +1,9 @@
 import type { Track } from '@shared/types/track';
-import { cacheAudioInBackground, getCachedAudioUrl } from './audioCache';
+import {
+  abortBackgroundCaching,
+  cacheAudioInBackground,
+  getCachedAudioUrl,
+} from './audioCache';
 
 export interface AudioCallbacks {
   onTimeUpdate: (positionSec: number, durationSec: number, bufferedSec: number) => void;
@@ -37,12 +41,16 @@ class WebAudioEngine {
   private pendingCacheTimer: ReturnType<typeof setTimeout> | null = null;
 
   constructor() {
-    this.audio = new Audio();
-    this.audio.preload = 'metadata';
+    this.audio = this.createAudioElement();
+  }
+
+  private createAudioElement(): HTMLAudioElement {
+    const el = new Audio();
+    el.preload = 'metadata';
 
     const getBufferedSec = () => {
       try {
-        const b = this.audio.buffered;
+        const b = el.buffered;
         if (b && b.length > 0) {
           return b.end(b.length - 1);
         }
@@ -53,69 +61,80 @@ class WebAudioEngine {
     };
 
     const emitTime = () => {
-      const pos = this.audio.currentTime || 0;
-      const dur = Number.isFinite(this.audio.duration) ? this.audio.duration : 0;
+      if (this.audio !== el) return;
+      const pos = el.currentTime || 0;
+      const dur = Number.isFinite(el.duration) ? el.duration : 0;
       this.callbacks?.onTimeUpdate(pos, dur, getBufferedSec());
     };
 
-    this.audio.addEventListener('timeupdate', () => {
+    el.addEventListener('timeupdate', () => {
+      if (this.audio !== el) return;
       emitTime();
-      if (!this.audio.paused && this.wantToPlay) {
+      if (!el.paused && this.wantToPlay) {
         this.callbacks?.onPlayStateChange(true, false);
       }
     });
 
-    this.audio.addEventListener('progress', () => {
+    el.addEventListener('progress', () => {
+      if (this.audio !== el) return;
       emitTime();
     });
 
-    this.audio.addEventListener('loadedmetadata', () => {
+    el.addEventListener('loadedmetadata', () => {
+      if (this.audio !== el) return;
       emitTime();
     });
 
-    this.audio.addEventListener('loadstart', () => {
+    el.addEventListener('loadstart', () => {
+      if (this.audio !== el) return;
       if (this.wantToPlay) {
         this.callbacks?.onPlayStateChange(true, true);
       }
     });
 
-    this.audio.addEventListener('playing', () => {
+    el.addEventListener('playing', () => {
+      if (this.audio !== el) return;
       this.wantToPlay = true;
       this.callbacks?.onPlayStateChange(true, false);
       getAndroidBridge()?.onPlaybackStateChanged?.(true, this.currentTrackTitle);
     });
 
-    this.audio.addEventListener('pause', () => {
-      // لا نغيّر الحالة إذا كنا في منتصف تبديل لمقطع جديد
+    el.addEventListener('pause', () => {
+      if (this.audio !== el) return;
       if (!this.wantToPlay) {
         this.callbacks?.onPlayStateChange(false, false);
         getAndroidBridge()?.onPlaybackStateChanged?.(false, this.currentTrackTitle);
       }
     });
 
-    this.audio.addEventListener('waiting', () => {
+    el.addEventListener('waiting', () => {
+      if (this.audio !== el) return;
       if (this.wantToPlay) {
         this.callbacks?.onPlayStateChange(true, true);
       }
     });
 
-    this.audio.addEventListener('canplay', () => {
-      this.callbacks?.onPlayStateChange(this.wantToPlay && !this.audio.paused, false);
+    el.addEventListener('canplay', () => {
+      if (this.audio !== el) return;
+      this.callbacks?.onPlayStateChange(this.wantToPlay && !el.paused, false);
     });
 
-    this.audio.addEventListener('ended', () => {
+    el.addEventListener('ended', () => {
+      if (this.audio !== el) return;
       this.wantToPlay = false;
       this.callbacks?.onPlayStateChange(false, false);
       this.callbacks?.onEnded();
     });
 
-    this.audio.addEventListener('error', () => {
-      // تجاهل أخطاء التفريغ عند إيقاف أو تبديل مقطع
-      if (!this.audio.getAttribute('src')) return;
+    el.addEventListener('error', () => {
+      if (this.audio !== el) return;
+      if (!el.getAttribute('src')) return;
       this.wantToPlay = false;
       this.callbacks?.onPlayStateChange(false, false);
       this.callbacks?.onError('تعذّر تشغيل هذا المقطع حالياً — جرّب إعادة المحاولة أو اختر مقطعاً آخر.');
     });
+
+    return el;
   }
 
   bindCallbacks(callbacks: AudioCallbacks) {
@@ -180,18 +199,25 @@ class WebAudioEngine {
       clearTimeout(this.pendingCacheTimer);
       this.pendingCacheTimer = null;
     }
+    // إلغاء أي تنزيل خلفي للزامل السابق فوراً حتى لا يزاحم الزامل الجديد!
+    abortBackgroundCaching();
 
-    // إيقاف فوري للمقطع السابق وتجهيز الجديد بدون تعارض
-    this.audio.pause();
+    // إيقاف فوري للمشغّل القديم وإنشاء عنصر Audio نظيف تماماً للزامل الجديد (لفتح فوري مثل أول زامل!)
+    const oldAudio = this.audio;
+    oldAudio.pause();
+    oldAudio.removeAttribute('src');
+    oldAudio.load();
+
+    const nextAudio = this.createAudioElement();
+    this.audio = nextAudio;
     this.callbacks?.onPlayStateChange(true, true);
 
     // إذا كان المقطع محفوظاً محلياً نُشغّله فوراً من الكاش أوفلاين، وإلا نُشغّله بالبث السريع أولاً
     const cachedUrl = await getCachedAudioUrl(track.streamUrl);
-    if (token !== this.loadToken) return;
+    if (token !== this.loadToken || this.audio !== nextAudio) return;
 
-    this.audio.src = cachedUrl ?? track.streamUrl;
-    this.audio.load();
-    this.audio.playbackRate = playbackRate;
+    nextAudio.src = cachedUrl ?? track.streamUrl;
+    nextAudio.playbackRate = playbackRate;
     this.updateMediaSessionMetadata(track);
 
     // نؤخر الحفظ في الخلفية 3 ثوانٍ بعد بدء التشغيل حتى لا يزاحم سرعة فتح الزامل الفوري
