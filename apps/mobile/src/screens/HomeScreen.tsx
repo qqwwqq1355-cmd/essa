@@ -5,6 +5,7 @@ import type { TrackCategory } from '@shared/types/track';
 import { FONTS, RADIUS, type ThemePalette } from '../theme/tokens';
 import { useAppStore } from '../store/useAppStore';
 import { formatDuration, formatPlayCount, formatRelativeArabicDate } from '../utils/format';
+import { cleanLyricsLines } from '../utils/lyrics';
 import { TrackCover } from '../components/TrackCover';
 import { TrackRow } from '../components/TrackRow';
 import { Icon } from '../components/Icon';
@@ -140,7 +141,7 @@ export const HomeScreen: React.FC<HomeScreenProps> = React.memo(({ theme }) => {
         const savedY = Number(sessionStorage.getItem('essa_home_scroll_y') || 0);
         if (savedY > 0) {
           setTimeout(() => {
-            scrollRef.current?.scrollTo({ y: savedY, animated: false });
+            scrollRef.current?.scrollTo?.({ y: savedY, animated: false });
           }, 60);
         }
       } catch {
@@ -183,10 +184,7 @@ export const HomeScreen: React.FC<HomeScreenProps> = React.memo(({ theme }) => {
   const { dailyQuoteTrack, dailyQuoteLines } = useMemo(() => {
     for (const t of sortedAllTracks) {
       if (!t.hasLyrics || !t.lyrics) continue;
-      const cleanLines = t.lyrics
-        .split('\n')
-        .map((l) => l.trim())
-        .filter(isCleanPoetryLine);
+      const cleanLines = cleanLyricsLines(t.lyrics, t.title).filter(isCleanPoetryLine);
       if (cleanLines.length >= 2) {
         return { dailyQuoteTrack: t, dailyQuoteLines: cleanLines.slice(0, 2) };
       }
@@ -202,16 +200,18 @@ export const HomeScreen: React.FC<HomeScreenProps> = React.memo(({ theme }) => {
       style={styles.scroll}
       contentContainerStyle={styles.container}
       showsVerticalScrollIndicator={false}
-      onScroll={(e: { nativeEvent?: { contentOffset?: { y?: number } } }) => {
-        try {
-          const y = e?.nativeEvent?.contentOffset?.y;
-          if (typeof y === 'number') {
-            sessionStorage.setItem('essa_home_scroll_y', String(Math.round(y)));
+      {...({
+        onScroll: (e: { nativeEvent?: { contentOffset?: { y?: number } } }) => {
+          try {
+            const y = e?.nativeEvent?.contentOffset?.y;
+            if (typeof y === 'number') {
+              sessionStorage.setItem('essa_home_scroll_y', String(Math.round(y)));
+            }
+          } catch {
+            // تجاهل
           }
-        } catch {
-          // تجاهل
-        }
-      }}
+        },
+      } as Record<string, unknown>)}
     >
       {/* الترويسة الرئيسية */}
       <View style={styles.header}>

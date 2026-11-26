@@ -64,23 +64,78 @@ function extractAudioFromMessage(msg: Api.Message): ExtractedAudioInfo | null {
 
 function findCompanionLyricsMessage(
   audioMsg: Api.Message,
-  batchMessages: Api.Message[]
+  windowMessages: Api.Message[],
+  hintTitle?: string | null
 ): { text: string; messageId: number } | null {
-  const MAX_TIME_DIFF_SEC = 1800;
+  const MAX_TIME_DIFF_SEC = 7200;
+  const cleanHint = (hintTitle || '').replace(/[\u064B-\u065F\u0670ـ]/g, '').trim();
 
-  const candidates = batchMessages.filter((m) => {
+  const candidates = windowMessages.filter((m) => {
     if (m.id === audioMsg.id) return false;
     if (extractAudioFromMessage(m)) return false;
     const text = (m.message || '').trim();
     if (text.length < 30) return false;
     const timeDiff = Math.abs((m.date || 0) - (audioMsg.date || 0));
-    return timeDiff <= MAX_TIME_DIFF_SEC && Math.abs(m.id - audioMsg.id) <= 4;
+    return timeDiff <= MAX_TIME_DIFF_SEC && Math.abs(m.id - audioMsg.id) <= 12;
   });
 
   if (candidates.length === 0) return null;
 
-  candidates.sort((a, b) => Math.abs(a.id - audioMsg.id) - Math.abs(b.id - audioMsg.id));
+  const scoreCandidate = (m: Api.Message): number => {
+    const text = (m.message || '').trim();
+    const lines = text.split('\n').map((l) => l.trim()).filter(Boolean);
+    const nonLinkLines = lines.filter((l) => !/(https?:\/\/|www\.)/i.test(l));
+    let score = 0;
+
+    if (nonLinkLines.length >= 4 || text.includes('〰')) score += 600;
+    if (cleanHint.length >= 3) {
+      const normText = text.replace(/[\u064B-\u065F\u0670ـ]/g, '');
+      if (normText.includes(cleanHint)) score += 800;
+    }
+    if (text.length < 160 && /\b(?:360|480|720|1080)p?\b/i.test(text)) {
+      score -= 500;
+    }
+    score -= Math.abs(m.id - audioMsg.id) * 15;
+    return score;
+  };
+
+  candidates.sort((a, b) => scoreCandidate(b) - scoreCandidate(a));
+  if (scoreCandidate(candidates[0]) <= 0) return null;
   return { text: candidates[0].message || '', messageId: candidates[0].id };
+}
+
+async function fetchMmyPostLyricsIfLinked(
+  rawText: string
+): Promise<{ lyrics: string; poet: string | null } | null> {
+  const m = rawText.match(/mmy\.ye\/(\d{4,7})/i);
+  if (!m) return null;
+  try {
+    const controller = new AbortController();
+    const timer = setTimeout(() => controller.abort(), 8000);
+    const res = await fetch(
+      `https://www.mmy.ye/wp-json/wp/v2/posts/${m[1]}?_fields=id,title,content`,
+      { signal: controller.signal }
+    );
+    clearTimeout(timer);
+    if (!res.ok) return null;
+    const post = (await res.json()) as { content?: { rendered?: string } };
+    const html = post?.content?.rendered;
+    if (!html) return null;
+    const plain = html
+      .replace(/<br\s*\/?>/gi, '\n')
+      .replace(/<\/(?:p|div|li|h[1-6])>/gi, '\n')
+      .replace(/<[^>]+>/g, '')
+      .replace(/&nbsp;/gi, ' ')
+      .replace(/&amp;/gi, '&')
+      .replace(/&#(\d+);/g, (_, d) => String.fromCharCode(Number(d)));
+    const parsed = parseTelegramAudioPost({ caption: plain });
+    if (parsed.lyricsRaw && parsed.lyricsRaw.split('\n').length >= 4) {
+      return { lyrics: parsed.lyricsRaw, poet: parsed.poet };
+    }
+  } catch {
+    // تجاهل أخطاء الاتصال المؤقتة بـ mmy.ye
+  }
+  return null;
 }
 
 function findCompanionPhotoMessage(
@@ -131,8 +186,11 @@ async function processBatch(
   messages: Api.Message[],
   existingIds: Set<number>,
   existingCoverIds: Set<number>,
-  state: { highestMessageId: number; syncedCount: number; skippedCount: number }
+  existingGoodLyricsIds: Set<number>,
+  state: { highestMessageId: number; syncedCount: number; skippedCount: number },
+  windowMessages?: Api.Message[]
 ) {
+  const searchPool = windowMessages ?? messages;
   for (const msg of messages) {
     if (msg.id > state.highestMessageId) {
       state.highestMessageId = msg.id;
@@ -140,6 +198,8 @@ async function processBatch(
 
     const audio = extractAudioFromMessage(msg);
     if (!audio) continue;
+
+    const hintTitle = audio.audioTitle || audio.fileName?.replace(/\.(mp3|m4a|ogg|wav)$/i, '').replace(/[_-]+/g, ' ');
 
     if (existingIds.has(msg.id)) {
       // تحديث عدد المشاهدات الحقيقي من تليجرام للزوامل الموجودة
@@ -149,7 +209,7 @@ async function processBatch(
       }
       // إذا كان الزامل موجوداً بالفعل لكن بدون صورة غلاف، نسحب الصورة المصغّرة فقط بدون إعادة رفع الصوت!
       if (config.storageMode === 'r2' && r2Store && !existingCoverIds.has(msg.id)) {
-        const companionPhoto = findCompanionPhotoMessage(msg, messages);
+        const companionPhoto = findCompanionPhotoMessage(msg, searchPool);
         const coverKey = await r2Store.uploadCoverFromTelegramMessage(client, msg, companionPhoto);
         if (coverKey) {
           await db.updateTrackCover(msg.id, coverKey);
@@ -157,17 +217,60 @@ async function processBatch(
           console.log(`[telegram-sync] 🖼 Cover added for existing msg #${msg.id}`);
         }
       }
+      // إصلاح الكلمات الناقصة أو المفقودة للزوامل الموجودة (من الرسالة المرافقة أو mmy.ye)
+      if (!existingGoodLyricsIds.has(msg.id)) {
+        const companion = findCompanionLyricsMessage(msg, searchPool, hintTitle);
+        const parsed = parseTelegramAudioPost({
+          caption: msg.message,
+          audioTitle: audio.audioTitle,
+          fileName: audio.fileName,
+          companionLyricsText: companion?.text,
+        });
+        let bestLyrics = parsed.lyricsRaw;
+        let bestPoet = parsed.poet;
+        const lineCount = bestLyrics ? bestLyrics.split('\n').length : 0;
+        if (lineCount < 4) {
+          const linked = await fetchMmyPostLyricsIfLinked(
+            `${msg.message || ''}\n${companion?.text || ''}`
+          );
+          if (linked && linked.lyrics.split('\n').length > lineCount) {
+            bestLyrics = linked.lyrics;
+            if (!bestPoet && linked.poet) bestPoet = linked.poet;
+          }
+        }
+        if (bestLyrics && bestLyrics.length >= 120) {
+          await db.updateTrackLyricsAndPoet(
+            msg.id,
+            `tg_${msg.id}`,
+            bestLyrics,
+            normalizeArabic(bestLyrics),
+            bestPoet,
+            companion?.messageId ?? msg.id
+          );
+          existingGoodLyricsIds.add(msg.id);
+          console.log(`[telegram-sync] 📝 Lyrics repaired for existing msg #${msg.id}`);
+        }
+      }
       state.skippedCount++;
       continue;
     }
 
-    const companion = findCompanionLyricsMessage(msg, messages);
+    const companion = findCompanionLyricsMessage(msg, searchPool, hintTitle);
     const parsed = parseTelegramAudioPost({
       caption: msg.message,
       audioTitle: audio.audioTitle,
       fileName: audio.fileName,
       companionLyricsText: companion?.text,
     });
+    if (!parsed.lyricsRaw || parsed.lyricsRaw.split('\n').length < 4) {
+      const linked = await fetchMmyPostLyricsIfLinked(
+        `${msg.message || ''}\n${companion?.text || ''}`
+      );
+      if (linked && (!parsed.lyricsRaw || linked.lyrics.split('\n').length > parsed.lyricsRaw.split('\n').length)) {
+        parsed.lyricsRaw = linked.lyrics;
+        if (!parsed.poet && linked.poet) parsed.poet = linked.poet;
+      }
+    }
 
     let telegramFileId: string | null = null;
     let telegramArchiveMsgId: number | null = null;
@@ -293,6 +396,9 @@ async function main() {
       releasePrefix
     );
     const existingCoverIds = await db.getSourceMessageIdsWithCover(config.sourceChannelUsername);
+    const existingGoodLyricsIds = await db.getSourceMessageIdsWithGoodLyrics(
+      config.sourceChannelUsername
+    );
 
     console.log(
       `[telegram-sync] Already ready in D1 (${config.storageMode}): ${existingIds.size} tracks | Last message ID: #${state.highestMessageId}`
@@ -302,6 +408,7 @@ async function main() {
       const pageSize = 100;
       let offsetId = 0;
       let totalScanned = 0;
+      let prevTailMessages: Api.Message[] = [];
 
       while (true) {
         const rawBatch = await withFloodWaitRetry(`getMessages offset=${offsetId}`, () =>
@@ -328,6 +435,9 @@ async function main() {
           `[telegram-sync] Scanning batch: ${batch.length}/${rawArray.length} msgs (IDs ${newestInBatch} -> ${oldestInBatch}) | Scanned: ${totalScanned} | Uploaded new: ${state.syncedCount} | Skipped ready: ${state.skippedCount}`
         );
 
+        const contextMessages = [...prevTailMessages, ...batch];
+        prevTailMessages = batch.slice(-20);
+
         await processBatch(
           client,
           db,
@@ -339,7 +449,9 @@ async function main() {
           batch,
           existingIds,
           existingCoverIds,
-          state
+          existingGoodLyricsIds,
+          state,
+          contextMessages
         );
 
         await db.updateSyncState(
@@ -382,6 +494,7 @@ async function main() {
         messages,
         existingIds,
         existingCoverIds,
+        existingGoodLyricsIds,
         state
       );
     }

@@ -1,9 +1,12 @@
 import type { ArtworkPalette, ParsedTelegramPost, TrackCategory } from '../types/track';
 
 const CHANNEL_NOISE_PATTERNS: RegExp[] = [
-  /https?:\/\/t\.me\/[^\s]+/gi,
+  /https?:\/\/\S+/gi,
+  /www\.\S+/gi,
+  /(?:x\.com|twitter\.com|mmy\.ye|meyon\.com\.ye|aparat\.com)\S*/gi,
   /t\.me\/[^\s]+/gi,
   /@[a-zA-Z0-9_]{3,}/g,
+  /[ـ〰\uFE0F]{2,}/g,
   /اشترك.*القناة.*/gi,
   /للاشتراك.*تليجرام.*/gi,
   /قناة\s+عيسى\s+الليث\s+الرسمية/gi,
@@ -12,7 +15,7 @@ const CHANNEL_NOISE_PATTERNS: RegExp[] = [
   /[⬇️👇🔗📢🎵🎙️✨⭐🔥]+/g,
 ];
 
-const POET_LINE_REGEX = /(?:كلمات\s*(?:الشاعر)?|الشاعر|شعر)\s*[:：\-]?\s*([^\n|•#]+)/i;
+const POET_LINE_REGEX = /(?:كلمات\s*(?:الشاعر)?|الشاعر|شعر)\s*[|/\\:：\-–—]?\s*([^\n|•#]+)/i;
 const TITLE_PREFIX_REGEX = /^(?:زامل|نشيد|أنشودة|قصيدة|شيلة|مقطع|جديد)\s*[:：\-]?\s*/i;
 const HASHTAG_REGEX = /#([\u0600-\u06FFa-zA-Z0-9_]+)/g;
 

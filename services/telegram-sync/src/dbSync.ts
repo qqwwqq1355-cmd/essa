@@ -209,6 +209,42 @@ export class CloudflareD1SyncClient {
     return new Set(rows.map((r) => Number(r.source_message_id)));
   }
 
+  async getSourceMessageIdsWithGoodLyrics(channelUsername: string): Promise<Set<number>> {
+    const rows = await this.query<{ source_message_id: number }>(
+      `SELECT t.source_message_id FROM tracks t
+       INNER JOIN track_lyrics l ON l.track_id = t.id
+       WHERE t.source_channel = ? AND t.is_deleted = 0
+         AND LENGTH(l.lyrics_raw) >= 180`,
+      [channelUsername]
+    );
+    return new Set(rows.map((r) => Number(r.source_message_id)));
+  }
+
+  async updateTrackLyricsAndPoet(
+    sourceMessageId: number,
+    trackId: string,
+    lyricsRaw: string,
+    lyricsNormalized: string,
+    poet: string | null,
+    lyricsMessageId: number | null
+  ): Promise<void> {
+    const now = new Date().toISOString();
+    await this.query(
+      `INSERT INTO track_lyrics (track_id, lyrics_raw, lyrics_normalized, lyrics_message_id, updated_at)
+       VALUES (?, ?, ?, ?, ?)
+       ON CONFLICT(track_id) DO UPDATE SET
+         lyrics_raw = excluded.lyrics_raw,
+         lyrics_normalized = excluded.lyrics_normalized,
+         lyrics_message_id = COALESCE(excluded.lyrics_message_id, track_lyrics.lyrics_message_id),
+         updated_at = excluded.updated_at`,
+      [trackId, lyricsRaw, lyricsNormalized, lyricsMessageId, now]
+    );
+    await this.query(
+      `UPDATE tracks SET poet = COALESCE(?, poet), updated_at = ? WHERE source_message_id = ?`,
+      [poet, now, sourceMessageId]
+    );
+  }
+
   async updateSyncState(
     channelUsername: string,
     lastMessageId: number,

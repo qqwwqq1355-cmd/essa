@@ -95,6 +95,7 @@ function savePersisted(state: PersistedState) {
 }
 
 const bundledCoversMap = new Map<string, string>();
+const bundledLyricsMap = new Map<string, { lyrics: string; poet: string | null }>();
 let bundledCatalogPromise: Promise<Track[]> | null = null;
 
 function normalizeOfflineCoverUrl(url?: string | null): string | null {
@@ -115,11 +116,17 @@ async function loadBundledCatalogOnce(): Promise<Track[]> {
         if (coverUrl && (coverUrl.startsWith('./offline/') || coverUrl.startsWith('offline/'))) {
           bundledCoversMap.set(t.id, coverUrl);
         }
+        const cleanLyr = t.lyrics && t.lyrics.trim().length > 0 ? t.lyrics : null;
+        if (cleanLyr) {
+          bundledLyricsMap.set(t.id, { lyrics: cleanLyr, poet: t.poet ?? null });
+        }
         return {
           ...t,
           coverUrl,
+          lyrics: cleanLyr,
+          hasLyrics: Boolean(cleanLyr),
           titleNormalized: t.titleNormalized || normalizeArabic(t.title),
-          lyricsNormalized: t.lyricsNormalized || normalizeArabic(t.lyrics),
+          lyricsNormalized: t.lyricsNormalized || normalizeArabic(cleanLyr),
         };
       });
       return hydrated;
@@ -694,11 +701,23 @@ export const useAppStore = create<AppState>((set, get) => {
               queueIds: bundledTracks.map((t) => t.id),
               isSyncing: false,
             }));
-          } else if (bundledCoversMap.size > 0) {
+          } else if (bundledCoversMap.size > 0 || bundledLyricsMap.size > 0) {
             set((s) => ({
               tracks: s.tracks.map((t) => {
                 const localCover = bundledCoversMap.get(t.id);
-                return localCover && t.coverUrl !== localCover ? { ...t, coverUrl: localCover } : t;
+                const bundledLyr = bundledLyricsMap.get(t.id);
+                const shouldUpgradeLyrics =
+                  bundledLyr && (!t.lyrics || bundledLyr.lyrics.length > t.lyrics.length);
+                return {
+                  ...t,
+                  coverUrl: localCover || t.coverUrl,
+                  poet: t.poet || bundledLyr?.poet || null,
+                  lyrics: shouldUpgradeLyrics ? bundledLyr.lyrics : t.lyrics,
+                  hasLyrics: shouldUpgradeLyrics ? true : t.hasLyrics,
+                  lyricsNormalized: shouldUpgradeLyrics
+                    ? normalizeArabic(bundledLyr.lyrics)
+                    : t.lyricsNormalized,
+                };
               }),
             }));
           }
@@ -724,9 +743,20 @@ export const useAppStore = create<AppState>((set, get) => {
             mergedMap.delete(t.id);
           } else {
             const bundledCover = bundledCoversMap.get(t.id);
+            const bundledLyr = bundledLyricsMap.get(t.id);
+            const prev = mergedMap.get(t.id);
+            const bestLyrics =
+              t.lyrics && (!bundledLyr || t.lyrics.length >= bundledLyr.lyrics.length)
+                ? t.lyrics
+                : bundledLyr?.lyrics || prev?.lyrics || null;
+            const bestPoet = t.poet || bundledLyr?.poet || prev?.poet || null;
             mergedMap.set(t.id, {
               ...t,
-              coverUrl: bundledCover || normalizeOfflineCoverUrl(t.coverUrl),
+              coverUrl: bundledCover || normalizeOfflineCoverUrl(t.coverUrl) || prev?.coverUrl || null,
+              poet: bestPoet,
+              lyrics: bestLyrics,
+              hasLyrics: Boolean(bestLyrics && bestLyrics.trim().length > 0),
+              lyricsNormalized: normalizeArabic(bestLyrics),
             });
           }
         }
@@ -762,7 +792,7 @@ export const useAppStore = create<AppState>((set, get) => {
         });
 
         if (!silent) {
-          get().showToast(`تم تحديث المكتبة من @${response.sourceChannel} (${liveTracks.length} زامل)`, 'success');
+          get().showToast(`تم تحديث المكتبة (${liveTracks.length} زامل)`, 'success');
         }
       } catch (err) {
         const msg = err instanceof Error ? err.message : 'تعذّر الاتصال بالخادم — تعمل المكتبة بالوضع المحلي';

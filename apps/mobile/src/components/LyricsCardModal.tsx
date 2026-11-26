@@ -2,6 +2,7 @@ import React, { useMemo, useState } from 'react';
 import { Pressable, ScrollView, StyleSheet, Text, View } from 'react-native';
 import { FONTS, RADIUS, type ThemePalette } from '../theme/tokens';
 import { useAppStore } from '../store/useAppStore';
+import { cleanLyricsLines } from '../utils/lyrics';
 import { Icon } from './Icon';
 
 interface LyricsCardModalProps {
@@ -27,10 +28,7 @@ export const LyricsCardModal: React.FC<LyricsCardModalProps> = ({ theme }) => {
 
   if (!lyricsShareTrackId || !track) return null;
 
-  const lines = (track.lyrics || '')
-    .split('\n')
-    .map((l) => l.trim())
-    .filter(Boolean);
+  const lines = cleanLyricsLines(track.lyrics, track.title);
 
   const activeIndices = selectedIndices.filter((i) => i < lines.length);
   const chosenLines =
@@ -105,7 +103,7 @@ export const LyricsCardModal: React.FC<LyricsCardModalProps> = ({ theme }) => {
     ctx.fillStyle = cardTheme.text;
     ctx.globalAlpha = 0.72;
     ctx.font = '500 28px "IBM Plex Sans Arabic", sans-serif';
-    ctx.fillText('عيسى الليث  •  @IssaAllaith', 540, 1222);
+    ctx.fillText('زوامل عيسى الليث', 540, 1222);
 
     const dataUrl = canvas.toDataURL('image/png');
     const fileName = `issa-allaith-${track.sourceMessageId}.png`;

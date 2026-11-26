@@ -4,40 +4,12 @@ import type { Track } from '@shared/types/track';
 import { FONTS, RADIUS, type ThemePalette } from '../theme/tokens';
 import { useAppStore } from '../store/useAppStore';
 import { formatDuration, formatFileSize, formatPlayCount, formatRelativeArabicDate } from '../utils/format';
+import { cleanLyricsLines } from '../utils/lyrics';
 import { TrackCover } from './TrackCover';
 import { Icon } from './Icon';
 
 interface FullPlayerModalProps {
   theme: ThemePalette;
-}
-
-function cleanLyricsLines(raw: string | null | undefined): string[] {
-  if (!raw) return [];
-  return raw
-    .split('\n')
-    .map((l) => l.trim())
-    .filter((line) => {
-      if (!line) return false;
-      // إزالة الفواصل الزخرفية (ـ••••••••••• أو ــــــــ أو ===)
-      if (/^[\sـ\-_=•●▪▫*#~─━]+$/.test(line)) return false;
-      // إزالة أي روابط مواقع أو منصات تواصل أو معرفات
-      if (
-        /(https?:\/\/|www\.|t\.me\/|twitter\.com|x\.com|mmy\.ye|youtu\.be|youtube\.com|facebook\.com|instagram\.com|@[a-z0-9_]+)/i.test(
-          line
-        )
-      ) {
-        return false;
-      }
-      // إزالة سطور الدعوة لحسابات التواصل والتليجرام
-      if (
-        /(على\s*تيليجرام|على\s*تليجرام|على\s*تويتر|حساب\s*عيسى\s*الليث|اشترك\s*في\s*القناة|رابط\s*القناة|تابعونا\s*على|الموقع\s*الرسمي)/i.test(
-          line
-        )
-      ) {
-        return false;
-      }
-      return true;
-    });
 }
 
 const SLEEP_OPTIONS = [
@@ -127,7 +99,7 @@ export const FullPlayerModal: React.FC<FullPlayerModalProps> = ({ theme }) => {
       ? Math.ceil((sleepTimerEndsAt - nowTick) / 60000)
       : null;
 
-  const lyricsLines = cleanLyricsLines(track.lyrics);
+  const lyricsLines = cleanLyricsLines(track.lyrics, track.title);
 
   const handleCopyLyrics = async () => {
     if (lyricsLines.length === 0) return;
@@ -487,10 +459,9 @@ export const FullPlayerModal: React.FC<FullPlayerModalProps> = ({ theme }) => {
             </View>
           )}
 
-          {/* بطاقة معاينة سريعة للكلمات لفتحها بلمسة واحدة */}
+          {/* عرض الكلمات كاملة أسفل المشغّل مع أزرار النسخ ووضع القراءة */}
           {lyricsLines.length > 0 && (
-            <Pressable
-              onPress={() => setTab('lyrics')}
+            <View
               style={[styles.lyricsPreviewCard, { backgroundColor: theme.surface, borderColor: theme.border }]}
             >
               <View style={styles.lyricsPreviewHead}>
@@ -498,12 +469,20 @@ export const FullPlayerModal: React.FC<FullPlayerModalProps> = ({ theme }) => {
                   <Icon name="lyrics" size={16} color={theme.accent} />
                   <Text style={[styles.lyricsPreviewTitle, { color: theme.accent }]}>الكلمات</Text>
                 </View>
-                <Text style={[styles.lyricsPreviewCta, { color: theme.textSecondary }]}>عرض الكل ←</Text>
+                <View style={styles.rowCenterGap}>
+                  <Pressable onPress={() => void handleCopyLyrics()} hitSlop={8}>
+                    <Text style={[styles.lyricsPreviewCta, { color: theme.textSecondary }]}>نسخ</Text>
+                  </Pressable>
+                  <Text style={{ color: theme.textMuted }}>•</Text>
+                  <Pressable onPress={() => setTab('lyrics')} hitSlop={8}>
+                    <Text style={[styles.lyricsPreviewCta, { color: theme.accent }]}>وضع القراءة الكامل ←</Text>
+                  </Pressable>
+                </View>
               </View>
-              <Text style={[styles.lyricsPreviewLines, { color: theme.textPrimary }]} numberOfLines={3}>
-                {lyricsLines.slice(0, 3).join('\n')}
+              <Text selectable style={[styles.lyricsPreviewLines, { color: theme.textPrimary }]}>
+                {lyricsLines.join('\n')}
               </Text>
-            </Pressable>
+            </View>
           )}
         </ScrollView>
       )}
@@ -541,12 +520,12 @@ export const FullPlayerModal: React.FC<FullPlayerModalProps> = ({ theme }) => {
           <ScrollView
             style={styles.flexScroll}
             contentContainerStyle={styles.lyricsContent}
-            showsVerticalScrollIndicator={false}
+            showsVerticalScrollIndicator={true}
           >
             <Text style={[styles.lyricsSongHeader, { color: theme.accent }]}>{track.title}</Text>
             {track.poet && (
               <Text style={[styles.lyricsPoetHeader, { color: theme.textSecondary }]}>
-                {track.poet}
+                {track.poet.startsWith('كلمات') ? track.poet : `كلمات: ${track.poet}`}
               </Text>
             )}
 
@@ -680,6 +659,7 @@ const styles = StyleSheet.create({
   flexScroll: {
     flex: 1,
     minHeight: 0,
+    overflow: 'hidden',
   },
   topBar: {
     flexDirection: 'row',
@@ -983,7 +963,7 @@ const styles = StyleSheet.create({
   lyricsContent: {
     paddingHorizontal: 22,
     paddingTop: 18,
-    paddingBottom: 36,
+    paddingBottom: 64,
     alignItems: 'center',
   },
   lyricsSongHeader: {
