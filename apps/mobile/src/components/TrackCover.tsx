@@ -41,6 +41,8 @@ export const TrackCover: React.FC<TrackCoverProps> = ({
         <img
           src={coverUrl}
           alt=""
+          loading="lazy"
+          decoding="async"
           style={{
             width: size,
             height: size,

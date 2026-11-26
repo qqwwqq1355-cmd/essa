@@ -34,10 +34,11 @@ class WebAudioEngine {
   private wantToPlay = false;
   private loadToken = 0;
   private pendingMetaHandler: (() => void) | null = null;
+  private pendingCacheTimer: ReturnType<typeof setTimeout> | null = null;
 
   constructor() {
     this.audio = new Audio();
-    this.audio.preload = 'auto';
+    this.audio.preload = 'metadata';
 
     const getBufferedSec = () => {
       try {
@@ -175,12 +176,16 @@ class WebAudioEngine {
       this.audio.removeEventListener('loadedmetadata', this.pendingMetaHandler);
       this.pendingMetaHandler = null;
     }
+    if (this.pendingCacheTimer) {
+      clearTimeout(this.pendingCacheTimer);
+      this.pendingCacheTimer = null;
+    }
 
     // إيقاف فوري للمقطع السابق وتجهيز الجديد بدون تعارض
     this.audio.pause();
     this.callbacks?.onPlayStateChange(true, true);
 
-    // إذا كان المقطع محفوظاً محلياً نُشغّله فوراً من الكاش أوفلاين، وإلا نُشغّله بالبث السريع ونحفظه في الخلفية
+    // إذا كان المقطع محفوظاً محلياً نُشغّله فوراً من الكاش أوفلاين، وإلا نُشغّله بالبث السريع أولاً
     const cachedUrl = await getCachedAudioUrl(track.streamUrl);
     if (token !== this.loadToken) return;
 
@@ -189,10 +194,16 @@ class WebAudioEngine {
     this.audio.playbackRate = playbackRate;
     this.updateMediaSessionMetadata(track);
 
+    // نؤخر الحفظ في الخلفية 3 ثوانٍ بعد بدء التشغيل حتى لا يزاحم سرعة فتح الزامل الفوري
     if (!cachedUrl && track.storageProvider !== 'local') {
-      cacheAudioInBackground(track.streamUrl, () => {
-        this.callbacks?.onTrackCached?.(track.id);
-      });
+      const urlToCache = track.streamUrl;
+      const trackIdToCache = track.id;
+      this.pendingCacheTimer = setTimeout(() => {
+        if (token !== this.loadToken || !this.wantToPlay) return;
+        cacheAudioInBackground(urlToCache, () => {
+          this.callbacks?.onTrackCached?.(trackIdToCache);
+        });
+      }, 3000);
     }
 
     if (startPositionSec > 0) {
