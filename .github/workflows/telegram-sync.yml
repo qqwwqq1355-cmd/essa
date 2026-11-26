@@ -2,8 +2,14 @@ name: Automated Telegram Sync (@IssaAllaith -> Cloudflare R2 + D1)
 
 on:
   schedule:
-    # يفحص قناة عيسى الليث تلقائياً كل 5 دقائق — أي زامل جديد يُحسّن بـ ffmpeg ويُرفع إلى Cloudflare R2 فوراً!
-    - cron: '*/5 * * * *'
+    # يفحص قناة عيسى الليث تلقائياً كل 15 دقيقة (أكثر ثباتاً على GitHub Actions)
+    - cron: '*/15 * * * *'
+  push:
+    branches:
+      - main
+    paths:
+      - 'services/telegram-sync/**'
+      - '.github/workflows/telegram-sync.yml'
   workflow_dispatch:
     inputs:
       mode:
