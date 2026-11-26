@@ -204,6 +204,7 @@ export const FullPlayerModal: React.FC<FullPlayerModalProps> = ({ theme }) => {
             >
               <TrackCover
                 palette={track.palette}
+                coverUrl={track.coverUrl}
                 size={224}
                 borderRadius={28}
                 isCurrent

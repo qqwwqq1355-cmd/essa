@@ -35,13 +35,15 @@ export async function fetchDeltaSync(baseUrl: string, sinceIso?: string): Promis
     const data = (await res.json()) as SyncResponse;
     lastMeta = data;
     const rewrittenTracks = data.tracks.map((t) => {
-      if (t.streamUrl && /^https?:\/\/[^/]+\.(workers|pages)\.dev\//i.test(t.streamUrl)) {
-        return {
-          ...t,
-          streamUrl: t.streamUrl.replace(/^https?:\/\/[^/]+\.(workers|pages)\.dev/i, clean),
-        };
-      }
-      return t;
+      const streamUrl =
+        t.streamUrl && /^https?:\/\/[^/]+\.(workers|pages)\.dev\//i.test(t.streamUrl)
+          ? t.streamUrl.replace(/^https?:\/\/[^/]+\.(workers|pages)\.dev/i, clean)
+          : t.streamUrl;
+      const coverUrl =
+        t.coverUrl && /^https?:\/\/[^/]+\.(workers|pages)\.dev\//i.test(t.coverUrl)
+          ? t.coverUrl.replace(/^https?:\/\/[^/]+\.(workers|pages)\.dev/i, clean)
+          : t.coverUrl;
+      return { ...t, streamUrl, coverUrl };
     });
     allTracks.push(...rewrittenTracks);
 

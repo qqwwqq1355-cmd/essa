@@ -25,6 +25,7 @@ export interface TrackUpsertInput {
   telegramFileId: string | null;
   telegramArchiveMsgId: number | null;
   r2ObjectKey: string | null;
+  coverUrl?: string | null;
   publishedAt: string;
   lyricsRaw: string | null;
   lyricsNormalized: string;
@@ -120,9 +121,9 @@ export class CloudflareD1SyncClient {
       `INSERT INTO tracks (
         id, source_channel, source_message_id, title, title_normalized, poet,
         category, duration_sec, file_size_bytes, mime_type, storage_provider,
-        telegram_file_id, telegram_archive_msg_id, r2_object_key,
+        telegram_file_id, telegram_archive_msg_id, r2_object_key, cover_url,
         published_at, updated_at, is_deleted
-      ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 0)
+      ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 0)
       ON CONFLICT(source_message_id) DO UPDATE SET
         title = excluded.title,
         title_normalized = excluded.title_normalized,
@@ -134,6 +135,7 @@ export class CloudflareD1SyncClient {
         telegram_file_id = COALESCE(excluded.telegram_file_id, tracks.telegram_file_id),
         telegram_archive_msg_id = COALESCE(excluded.telegram_archive_msg_id, tracks.telegram_archive_msg_id),
         r2_object_key = COALESCE(excluded.r2_object_key, tracks.r2_object_key),
+        cover_url = COALESCE(excluded.cover_url, tracks.cover_url),
         updated_at = excluded.updated_at`,
       [
         track.id,
@@ -150,6 +152,7 @@ export class CloudflareD1SyncClient {
         track.telegramFileId,
         track.telegramArchiveMsgId,
         track.r2ObjectKey,
+        track.coverUrl ?? null,
         track.publishedAt,
         now,
       ]

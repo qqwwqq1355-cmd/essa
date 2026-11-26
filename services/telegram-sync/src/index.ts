@@ -83,6 +83,22 @@ function findCompanionLyricsMessage(
   return { text: candidates[0].message || '', messageId: candidates[0].id };
 }
 
+function findCompanionPhotoMessage(
+  audioMsg: Api.Message,
+  batchMessages: Api.Message[]
+): Api.Message | null {
+  const MAX_TIME_DIFF_SEC = 600;
+  const candidates = batchMessages.filter((m) => {
+    if (m.id === audioMsg.id) return false;
+    if (!(m.media instanceof Api.MessageMediaPhoto)) return false;
+    const timeDiff = Math.abs((m.date || 0) - (audioMsg.date || 0));
+    return timeDiff <= MAX_TIME_DIFF_SEC && Math.abs(m.id - audioMsg.id) <= 2;
+  });
+  if (candidates.length === 0) return null;
+  candidates.sort((a, b) => Math.abs(a.id - audioMsg.id) - Math.abs(b.id - audioMsg.id));
+  return candidates[0];
+}
+
 async function withFloodWaitRetry<T>(label: string, fn: () => Promise<T>): Promise<T> {
   for (let attempt = 1; attempt <= 4; attempt++) {
     try {
@@ -140,6 +156,7 @@ async function processBatch(
     let telegramFileId: string | null = null;
     let telegramArchiveMsgId: number | null = null;
     let r2ObjectKey: string | null = null;
+    let coverUrl: string | null = null;
     let finalFileSizeBytes = audio.fileSizeBytes;
 
     if (config.storageMode === 'r2' && r2Store) {
@@ -150,6 +167,8 @@ async function processBatch(
       if (uploaded.sizeBytes > 0) {
         finalFileSizeBytes = uploaded.sizeBytes;
       }
+      const companionPhoto = findCompanionPhotoMessage(msg, messages);
+      coverUrl = await r2Store.uploadCoverFromTelegramMessage(client, msg, companionPhoto);
     } else if (config.storageMode === 'github' && githubStore) {
       const uploaded = await withFloodWaitRetry(`github-upload #${msg.id}`, () =>
         githubStore.uploadFromTelegramMessage(client, msg, audio.mimeType)
@@ -191,6 +210,7 @@ async function processBatch(
       telegramFileId,
       telegramArchiveMsgId,
       r2ObjectKey,
+      coverUrl,
       publishedAt: publishedIso,
       lyricsRaw: parsed.lyricsRaw,
       lyricsNormalized: normalizeArabic(parsed.lyricsRaw),

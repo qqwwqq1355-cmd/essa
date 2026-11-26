@@ -80,5 +80,69 @@ export class R2WorkerAudioStore {
 
     return { objectKey, sizeBytes: bytes.byteLength };
   }
+
+  /**
+   * سحب الصورة المصغّرة (Thumbnail) بحجم صغير جداً (~10–25 KB) من ملف الصوت أو رسالة الصورة المرافقة
+   * ورفعها إلى Cloudflare R2 في covers/tg_<id>.jpg
+   */
+  async uploadCoverFromTelegramMessage(
+    client: TelegramClient,
+    audioMessage: Api.Message,
+    companionPhotoMessage?: Api.Message | null
+  ): Promise<string | null> {
+    const objectKey = `covers/tg_${audioMessage.id}.jpg`;
+    const endpoint = `${this.apiBase}/v1/internal/r2/${objectKey}`;
+
+    try {
+      // 1) إذا كانت الصورة مرفوعة مسبقاً في R2 نعيد مفتاحها فوراً
+      const checkRes = await fetch(endpoint, {
+        method: 'HEAD',
+        headers: this.authHeaders,
+      });
+      if (checkRes.ok) {
+        return objectKey;
+      }
+
+      // 2) محاولة سحب الصورة المصغّرة (thumb) من ملف الصوت نفسه أو من رسالة الصورة المرافقة
+      let raw: unknown = null;
+      const targetMsg = companionPhotoMessage ?? audioMessage;
+
+      try {
+        // thumb: 1 (أو 0) يجلب النسخة المصغّرة الخفيفة جداً مباشرة من تليجرام بدون تحميل الصورة الأصلية الضخمة
+        raw = await client.downloadMedia(targetMsg, { thumb: 1 });
+      } catch {
+        raw = null;
+      }
+
+      if (!raw || typeof raw === 'string') {
+        try {
+          raw = await client.downloadMedia(targetMsg, { thumb: 0 });
+        } catch {
+          raw = null;
+        }
+      }
+
+      if (!raw || typeof raw === 'string') return null;
+
+      const bytes = raw instanceof Uint8Array ? raw : new Uint8Array(raw as ArrayBufferLike);
+      // نتجاهل الصور الفارغة أو الضخمة جداً (> 250KB) للحفاظ على خفة التطبيق
+      if (bytes.byteLength < 200 || bytes.byteLength > 250_000) return null;
+
+      const putRes = await fetch(endpoint, {
+        method: 'PUT',
+        headers: {
+          ...this.authHeaders,
+          'Content-Type': 'image/jpeg',
+          'Content-Length': String(bytes.byteLength),
+        },
+        body: bytes,
+      });
+
+      if (!putRes.ok) return null;
+      return objectKey;
+    } catch {
+      return null;
+    }
+  }
 }
 

@@ -75,6 +75,7 @@ export const MiniPlayer: React.FC<MiniPlayerProps> = ({
         <View style={styles.content}>
           <TrackCover
             palette={track.palette}
+            coverUrl={track.coverUrl}
             size={44}
             borderRadius={11}
             isCurrent

@@ -104,7 +104,10 @@ function mapRowToTrack(row, origin) {
     mimeType: row.mime_type || 'audio/mpeg',
     storageProvider: row.storage_provider || 'r2',
     streamUrl: `${origin}/v1/tracks/${encodeURIComponent(row.id)}/stream?v=${encodeURIComponent(row.updated_at || '1')}`,
-    coverUrl: row.cover_url ?? null,
+    coverUrl:
+      row.cover_url && row.cover_url.startsWith('covers/')
+        ? `${origin}/v1/tracks/${encodeURIComponent(row.id)}/cover`
+        : row.cover_url ?? null,
     palette: getPalette(row.source_message_id),
     publishedAt: row.published_at,
     updatedAt: row.updated_at,
@@ -387,6 +390,31 @@ export default {
         }
 
         return jsonResponse({ error: 'Audio MP3 is currently syncing to Cloudflare R2.' }, 404);
+      }
+
+      // 4.5) تقديم صورة غلاف الزامل المصغّرة من Cloudflare R2
+      const coverMatch = pathname.match(/^\/v1\/tracks\/([^/]+)\/cover$/);
+      if (coverMatch) {
+        const id = decodeURIComponent(coverMatch[1]);
+        const row = await env.DB.prepare(
+          `SELECT cover_url FROM tracks WHERE id = ? AND is_deleted = 0 LIMIT 1`
+        )
+          .bind(id)
+          .first();
+
+        if (!row?.cover_url || !env.AUDIO_BUCKET) {
+          return new Response(null, { status: 404, headers: CORS_HEADERS });
+        }
+
+        const obj = await env.AUDIO_BUCKET.get(row.cover_url);
+        if (!obj) {
+          return new Response(null, { status: 404, headers: CORS_HEADERS });
+        }
+
+        const headers = new Headers(CORS_HEADERS);
+        headers.set('Content-Type', 'image/jpeg');
+        headers.set('Cache-Control', 'public, max-age=31536000, immutable');
+        return new Response(obj.body, { status: 200, headers });
       }
 
       // 5) تفاصيل مقطع محدد
