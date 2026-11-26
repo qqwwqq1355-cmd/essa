@@ -87,12 +87,12 @@ function findCompanionPhotoMessage(
   audioMsg: Api.Message,
   batchMessages: Api.Message[]
 ): Api.Message | null {
-  const MAX_TIME_DIFF_SEC = 600;
+  const MAX_TIME_DIFF_SEC = 1800;
   const candidates = batchMessages.filter((m) => {
     if (m.id === audioMsg.id) return false;
     if (!(m.media instanceof Api.MessageMediaPhoto)) return false;
     const timeDiff = Math.abs((m.date || 0) - (audioMsg.date || 0));
-    return timeDiff <= MAX_TIME_DIFF_SEC && Math.abs(m.id - audioMsg.id) <= 2;
+    return timeDiff <= MAX_TIME_DIFF_SEC && Math.abs(m.id - audioMsg.id) <= 4;
   });
   if (candidates.length === 0) return null;
   candidates.sort((a, b) => Math.abs(a.id - audioMsg.id) - Math.abs(b.id - audioMsg.id));

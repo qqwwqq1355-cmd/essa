@@ -70,7 +70,7 @@ export class R2WorkerAudioStore {
         'Content-Type': 'audio/mpeg',
         'Content-Length': String(bytes.byteLength),
       },
-      body: bytes,
+      body: Buffer.from(bytes),
     });
 
     if (!putRes.ok) {
@@ -103,30 +103,38 @@ export class R2WorkerAudioStore {
         return objectKey;
       }
 
-      // 2) محاولة سحب الصورة المصغّرة (thumb) من ملف الصوت نفسه أو من رسالة الصورة المرافقة
+      // 2) محاولة سحب الصورة المصغّرة من رسالة الصورة المرافقة أو من الغلاف المدمج في ملف الصوت
       let raw: unknown = null;
-      const targetMsg = companionPhotoMessage ?? audioMessage;
 
-      try {
-        // thumb: 1 (أو 0) يجلب النسخة المصغّرة الخفيفة جداً مباشرة من تليجرام بدون تحميل الصورة الأصلية الضخمة
-        raw = await client.downloadMedia(targetMsg, { thumb: 1 });
-      } catch {
-        raw = null;
+      if (companionPhotoMessage) {
+        const photoMedia = companionPhotoMessage.media as { photo?: { sizes?: unknown[] } } | undefined;
+        const sizes = photoMedia?.photo?.sizes;
+        // اختيار الحجم المتوسط/الصغير (مثل 320px) أو تنزيل الصورة مباشرة
+        const preferredThumb = Array.isArray(sizes) && sizes.length > 1 ? sizes[Math.min(1, sizes.length - 1)] : undefined;
+        try {
+          raw = preferredThumb
+            ? await client.downloadMedia(companionPhotoMessage, { thumb: preferredThumb as never })
+            : await client.downloadMedia(companionPhotoMessage, {});
+        } catch {
+          raw = await client.downloadMedia(companionPhotoMessage, {}).catch(() => null);
+        }
       }
 
       if (!raw || typeof raw === 'string') {
-        try {
-          raw = await client.downloadMedia(targetMsg, { thumb: 0 });
-        } catch {
-          raw = null;
+        const docMedia = audioMessage.media as { document?: { thumbs?: unknown[] } } | undefined;
+        const thumbs = docMedia?.document?.thumbs;
+        if (Array.isArray(thumbs) && thumbs.length > 0) {
+          const bestThumb = thumbs[thumbs.length - 1];
+          raw = await client
+            .downloadMedia(audioMessage, { thumb: bestThumb as never })
+            .catch(() => null);
         }
       }
 
       if (!raw || typeof raw === 'string') return null;
 
       const bytes = raw instanceof Uint8Array ? raw : new Uint8Array(raw as ArrayBufferLike);
-      // نتجاهل الصور الفارغة أو الضخمة جداً (> 250KB) للحفاظ على خفة التطبيق
-      if (bytes.byteLength < 200 || bytes.byteLength > 250_000) return null;
+      if (bytes.byteLength < 200 || bytes.byteLength > 600_000) return null;
 
       const putRes = await fetch(endpoint, {
         method: 'PUT',
@@ -135,7 +143,7 @@ export class R2WorkerAudioStore {
           'Content-Type': 'image/jpeg',
           'Content-Length': String(bytes.byteLength),
         },
-        body: bytes,
+        body: Buffer.from(bytes),
       });
 
       if (!putRes.ok) return null;
