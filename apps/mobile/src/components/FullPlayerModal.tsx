@@ -3,12 +3,41 @@ import { ActivityIndicator, Pressable, ScrollView, StyleSheet, Text, View } from
 import type { Track } from '@shared/types/track';
 import { FONTS, RADIUS, type ThemePalette } from '../theme/tokens';
 import { useAppStore } from '../store/useAppStore';
-import { formatDuration, formatFileSize } from '../utils/format';
+import { formatDuration, formatFileSize, formatPlayCount, formatRelativeArabicDate } from '../utils/format';
 import { TrackCover } from './TrackCover';
 import { Icon } from './Icon';
 
 interface FullPlayerModalProps {
   theme: ThemePalette;
+}
+
+function cleanLyricsLines(raw: string | null | undefined): string[] {
+  if (!raw) return [];
+  return raw
+    .split('\n')
+    .map((l) => l.trim())
+    .filter((line) => {
+      if (!line) return false;
+      // إزالة الفواصل الزخرفية (ـ••••••••••• أو ــــــــ أو ===)
+      if (/^[\sـ\-_=•●▪▫*#~─━]+$/.test(line)) return false;
+      // إزالة أي روابط مواقع أو منصات تواصل أو معرفات
+      if (
+        /(https?:\/\/|www\.|t\.me\/|twitter\.com|x\.com|mmy\.ye|youtu\.be|youtube\.com|facebook\.com|instagram\.com|@[a-z0-9_]+)/i.test(
+          line
+        )
+      ) {
+        return false;
+      }
+      // إزالة سطور الدعوة لحسابات التواصل والتليجرام
+      if (
+        /(على\s*تيليجرام|على\s*تليجرام|على\s*تويتر|حساب\s*عيسى\s*الليث|اشترك\s*في\s*القناة|رابط\s*القناة|تابعونا\s*على|الموقع\s*الرسمي)/i.test(
+          line
+        )
+      ) {
+        return false;
+      }
+      return true;
+    });
 }
 
 const SLEEP_OPTIONS = [
@@ -98,15 +127,12 @@ export const FullPlayerModal: React.FC<FullPlayerModalProps> = ({ theme }) => {
       ? Math.ceil((sleepTimerEndsAt - nowTick) / 60000)
       : null;
 
-  const lyricsLines = (track.lyrics || '')
-    .split('\n')
-    .map((l) => l.trim())
-    .filter(Boolean);
+  const lyricsLines = cleanLyricsLines(track.lyrics);
 
   const handleCopyLyrics = async () => {
-    if (!track.lyrics) return;
+    if (lyricsLines.length === 0) return;
     try {
-      await navigator.clipboard.writeText(`${track.title}\n— عيسى الليث\n\n${track.lyrics}`);
+      await navigator.clipboard.writeText(`${track.title}\n— عيسى الليث\n\n${lyricsLines.join('\n')}`);
       showToast('تم نسخ الكلمات إلى الحافظة', 'success');
     } catch {
       showToast('تعذّر النسخ التلقائي — يمكنك التحديد والنسخ يدوياً', 'info');
@@ -131,9 +157,7 @@ export const FullPlayerModal: React.FC<FullPlayerModalProps> = ({ theme }) => {
 
         <View style={styles.topCenter}>
           <Text style={[styles.topSource, { color: theme.accent }]}>
-            {track.storageProvider === 'local'
-              ? 'ملف MP3 محلي'
-              : `قناة @${track.sourceChannel}`}
+            {track.storageProvider === 'local' ? 'ملف MP3 محلي' : 'مكتبة عيسى الليث'}
           </Text>
           <Text style={[styles.topCategory, { color: theme.textSecondary }]}>
             {track.category} • {formatFileSize(track.fileSizeBytes)}
@@ -221,7 +245,10 @@ export const FullPlayerModal: React.FC<FullPlayerModalProps> = ({ theme }) => {
                 {track.title}
               </Text>
               <Text style={[styles.trackPoet, { color: theme.textSecondary }]} numberOfLines={1}>
-                أداء: عيسى الليث {track.poet ? `• ${track.poet}` : ''}
+                أداء: عيسى الليث {track.poet ? `• كلمات: ${track.poet}` : ''}
+              </Text>
+              <Text style={[styles.trackMetaLine, { color: theme.textMuted }]} numberOfLines={1}>
+                {formatRelativeArabicDate(track.publishedAt)} • {formatPlayCount(track.playCount)} استماع
               </Text>
             </View>
 
@@ -737,6 +764,10 @@ const styles = StyleSheet.create({
   trackPoet: {
     fontFamily: FONTS.ui,
     fontSize: 13.5,
+  },
+  trackMetaLine: {
+    fontFamily: FONTS.ui,
+    fontSize: 12,
   },
   circleActionBtn: {
     width: 44,

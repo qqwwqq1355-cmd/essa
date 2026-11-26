@@ -26,6 +26,7 @@ export interface TrackUpsertInput {
   telegramArchiveMsgId: number | null;
   r2ObjectKey: string | null;
   coverUrl?: string | null;
+  playCount?: number;
   publishedAt: string;
   lyricsRaw: string | null;
   lyricsNormalized: string;
@@ -122,8 +123,8 @@ export class CloudflareD1SyncClient {
         id, source_channel, source_message_id, title, title_normalized, poet,
         category, duration_sec, file_size_bytes, mime_type, storage_provider,
         telegram_file_id, telegram_archive_msg_id, r2_object_key, cover_url,
-        published_at, updated_at, is_deleted
-      ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 0)
+        play_count, published_at, updated_at, is_deleted
+      ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 0)
       ON CONFLICT(source_message_id) DO UPDATE SET
         title = excluded.title,
         title_normalized = excluded.title_normalized,
@@ -136,6 +137,7 @@ export class CloudflareD1SyncClient {
         telegram_archive_msg_id = COALESCE(excluded.telegram_archive_msg_id, tracks.telegram_archive_msg_id),
         r2_object_key = COALESCE(excluded.r2_object_key, tracks.r2_object_key),
         cover_url = COALESCE(excluded.cover_url, tracks.cover_url),
+        play_count = MAX(tracks.play_count, excluded.play_count),
         updated_at = excluded.updated_at`,
       [
         track.id,
@@ -153,6 +155,7 @@ export class CloudflareD1SyncClient {
         track.telegramArchiveMsgId,
         track.r2ObjectKey,
         track.coverUrl ?? null,
+        track.playCount ?? 0,
         track.publishedAt,
         now,
       ]
@@ -185,6 +188,14 @@ export class CloudflareD1SyncClient {
     await this.query(
       `UPDATE tracks SET cover_url = ?, updated_at = ? WHERE source_message_id = ? AND (cover_url IS NULL OR cover_url = '')`,
       [coverUrl, now, sourceMessageId]
+    );
+  }
+
+  async updateTrackViews(sourceMessageId: number, views: number): Promise<void> {
+    if (!views || views <= 0) return;
+    await this.query(
+      `UPDATE tracks SET play_count = MAX(play_count, ?) WHERE source_message_id = ?`,
+      [views, sourceMessageId]
     );
   }
 

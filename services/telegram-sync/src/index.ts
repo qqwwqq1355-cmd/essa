@@ -142,6 +142,11 @@ async function processBatch(
     if (!audio) continue;
 
     if (existingIds.has(msg.id)) {
+      // تحديث عدد المشاهدات الحقيقي من تليجرام للزوامل الموجودة
+      const tgViews = Number(msg.views || 0);
+      if (tgViews > 0) {
+        await db.updateTrackViews(msg.id, tgViews);
+      }
       // إذا كان الزامل موجوداً بالفعل لكن بدون صورة غلاف، نسحب الصورة المصغّرة فقط بدون إعادة رفع الصوت!
       if (config.storageMode === 'r2' && r2Store && !existingCoverIds.has(msg.id)) {
         const companionPhoto = findCompanionPhotoMessage(msg, messages);
@@ -222,6 +227,7 @@ async function processBatch(
       telegramArchiveMsgId,
       r2ObjectKey,
       coverUrl,
+      playCount: Number(msg.views || 0),
       publishedAt: publishedIso,
       lyricsRaw: parsed.lyricsRaw,
       lyricsNormalized: normalizeArabic(parsed.lyricsRaw),
