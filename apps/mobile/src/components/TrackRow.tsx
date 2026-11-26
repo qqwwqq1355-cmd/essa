@@ -56,6 +56,7 @@ export const TrackRow: React.FC<TrackRowProps> = ({
     >
       <TrackCover
         palette={track.palette}
+        coverUrl={track.coverUrl}
         size={54}
         borderRadius={14}
         isCurrent={isCurrent}

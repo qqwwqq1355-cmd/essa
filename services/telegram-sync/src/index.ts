@@ -130,6 +130,7 @@ async function processBatch(
   config: SyncConfig,
   messages: Api.Message[],
   existingIds: Set<number>,
+  existingCoverIds: Set<number>,
   state: { highestMessageId: number; syncedCount: number; skippedCount: number }
 ) {
   for (const msg of messages) {
@@ -141,6 +142,16 @@ async function processBatch(
     if (!audio) continue;
 
     if (existingIds.has(msg.id)) {
+      // إذا كان الزامل موجوداً بالفعل لكن بدون صورة غلاف، نسحب الصورة المصغّرة فقط بدون إعادة رفع الصوت!
+      if (config.storageMode === 'r2' && r2Store && !existingCoverIds.has(msg.id)) {
+        const companionPhoto = findCompanionPhotoMessage(msg, messages);
+        const coverKey = await r2Store.uploadCoverFromTelegramMessage(client, msg, companionPhoto);
+        if (coverKey) {
+          await db.updateTrackCover(msg.id, coverKey);
+          existingCoverIds.add(msg.id);
+          console.log(`[telegram-sync] 🖼 Cover added for existing msg #${msg.id}`);
+        }
+      }
       state.skippedCount++;
       continue;
     }
@@ -275,6 +286,7 @@ async function main() {
       config.storageMode,
       releasePrefix
     );
+    const existingCoverIds = await db.getSourceMessageIdsWithCover(config.sourceChannelUsername);
 
     console.log(
       `[telegram-sync] Already ready in D1 (${config.storageMode}): ${existingIds.size} tracks | Last message ID: #${state.highestMessageId}`
@@ -320,6 +332,7 @@ async function main() {
           config,
           batch,
           existingIds,
+          existingCoverIds,
           state
         );
 
@@ -362,6 +375,7 @@ async function main() {
         config,
         messages,
         existingIds,
+        existingCoverIds,
         state
       );
     }

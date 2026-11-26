@@ -180,6 +180,24 @@ export class CloudflareD1SyncClient {
     ).catch(() => undefined);
   }
 
+  async updateTrackCover(sourceMessageId: number, coverUrl: string): Promise<void> {
+    const now = new Date().toISOString();
+    await this.query(
+      `UPDATE tracks SET cover_url = ?, updated_at = ? WHERE source_message_id = ? AND (cover_url IS NULL OR cover_url = '')`,
+      [coverUrl, now, sourceMessageId]
+    );
+  }
+
+  async getSourceMessageIdsWithCover(channelUsername: string): Promise<Set<number>> {
+    const rows = await this.query<{ source_message_id: number }>(
+      `SELECT source_message_id FROM tracks
+       WHERE source_channel = ? AND is_deleted = 0
+         AND cover_url IS NOT NULL AND cover_url != ''`,
+      [channelUsername]
+    );
+    return new Set(rows.map((r) => Number(r.source_message_id)));
+  }
+
   async updateSyncState(
     channelUsername: string,
     lastMessageId: number,
