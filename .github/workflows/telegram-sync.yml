@@ -7,9 +7,6 @@ on:
   push:
     branches:
       - main
-    paths:
-      - 'services/telegram-sync/**'
-      - '.github/workflows/telegram-sync.yml'
   workflow_dispatch:
     inputs:
       mode:
