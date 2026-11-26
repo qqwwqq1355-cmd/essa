@@ -42,9 +42,15 @@ jobs:
 
       - name: Install Dependencies & Build Production Mobile Bundle
         env:
-          VITE_API_BASE_URL: https://essa-alleth-edge-api.qqwwqq1355.workers.dev
+          VITE_API_BASE_URL: https://essa-pages-proxy.vercel.app
           VITE_TELEGRAM_CHANNEL_URL: https://t.me/IssaAllaith
         run: |
+          if [ -f "111.jpg" ]; then
+            mkdir -p apps/mobile/public
+            cp "111.jpg" apps/mobile/public/app-icon.jpg
+            rm -f apps/mobile/android/app/src/main/res/drawable/ic_app_icon.xml
+            cp "111.jpg" apps/mobile/android/app/src/main/res/drawable/ic_app_icon.jpg
+          fi
           npm install --no-audit --no-fund
           npm run build
 
