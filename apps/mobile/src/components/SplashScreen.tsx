@@ -3,26 +3,42 @@ import { StyleSheet, Text, View } from 'react-native';
 import { FONTS } from '../theme/tokens';
 
 interface SplashScreenProps {
+  isReady: boolean;
   onFinish: () => void;
 }
 
-export const SplashScreen: React.FC<SplashScreenProps> = ({ onFinish }) => {
-  const [progress, setProgress] = useState(18);
+export const SplashScreen: React.FC<SplashScreenProps> = ({ isReady, onFinish }) => {
+  const [progress, setProgress] = useState(20);
+  const [minTimePassed, setMinTimePassed] = useState(false);
+  const [maxTimePassed, setMaxTimePassed] = useState(false);
   const [fading, setFading] = useState(false);
   const [imgError, setImgError] = useState(false);
 
   useEffect(() => {
-    const t1 = setTimeout(() => setProgress(62), 180);
-    const t2 = setTimeout(() => setProgress(100), 620);
-    const t3 = setTimeout(() => setFading(true), 920);
-    const t4 = setTimeout(() => onFinish(), 1260);
+    const t1 = setTimeout(() => setProgress((p) => Math.max(p, 58)), 160);
+    const t2 = setTimeout(() => setProgress((p) => Math.max(p, 82)), 500);
+    const tMin = setTimeout(() => setMinTimePassed(true), 700);
+    const tMax = setTimeout(() => setMaxTimePassed(true), 6000);
     return () => {
       clearTimeout(t1);
       clearTimeout(t2);
-      clearTimeout(t3);
-      clearTimeout(t4);
+      clearTimeout(tMin);
+      clearTimeout(tMax);
     };
-  }, [onFinish]);
+  }, []);
+
+  useEffect(() => {
+    if (!minTimePassed) return;
+    if (!isReady && !maxTimePassed) return;
+
+    setProgress(100);
+    const tFade = setTimeout(() => setFading(true), 180);
+    const tDone = setTimeout(() => onFinish(), 500);
+    return () => {
+      clearTimeout(tFade);
+      clearTimeout(tDone);
+    };
+  }, [isReady, minTimePassed, maxTimePassed, onFinish]);
 
   return (
     <div

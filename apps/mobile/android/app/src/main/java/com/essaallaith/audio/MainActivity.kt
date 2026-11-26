@@ -51,6 +51,18 @@ class MainActivity : AppCompatActivity() {
 
         requestNotificationPermissionIfNeeded()
 
+        // ربط أزرار الإشعار (السابق / تشغيل-إيقاف / التالي) بالتطبيق
+        MediaCommandBus.listener = { action ->
+            runOnUiThread {
+                if (::webView.isInitialized) {
+                    webView.evaluateJavascript(
+                        "window.__nativeMediaAction && window.__nativeMediaAction('$action')",
+                        null
+                    )
+                }
+            }
+        }
+
         val assetLoader = WebViewAssetLoader.Builder()
             .addPathHandler("/", WebViewAssetLoader.AssetsPathHandler(this))
             .build()
@@ -147,6 +159,7 @@ class MainActivity : AppCompatActivity() {
     }
 
     override fun onDestroy() {
+        MediaCommandBus.listener = null
         try {
             AudioKeepAliveService.stop(this)
         } catch (_: Exception) {
@@ -157,6 +170,15 @@ class MainActivity : AppCompatActivity() {
     }
 
     inner class AndroidBridge {
+        @JavascriptInterface
+        fun updateNowPlaying(title: String, artist: String, coverUrl: String, isPlaying: Boolean) {
+            try {
+                AudioKeepAliveService.update(this@MainActivity, title, artist, coverUrl, isPlaying)
+            } catch (_: Exception) {
+                // تجاهل إذا منع النظام الخدمة الأمامية
+            }
+        }
+
         @JavascriptInterface
         fun onPlaybackStateChanged(isPlaying: Boolean, title: String) {
             runOnUiThread {

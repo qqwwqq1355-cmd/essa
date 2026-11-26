@@ -48,8 +48,15 @@ jobs:
           if [ -f "111.jpg" ]; then
             mkdir -p apps/mobile/public
             cp "111.jpg" apps/mobile/public/app-icon.jpg
-            rm -f apps/mobile/android/app/src/main/res/drawable/ic_app_icon.xml
-            cp "111.jpg" apps/mobile/android/app/src/main/res/drawable/ic_app_icon.jpg
+            rm -f apps/mobile/android/app/src/main/res/drawable/ic_app_icon.xml apps/mobile/android/app/src/main/res/drawable/ic_app_icon.jpg
+            if command -v convert >/dev/null 2>&1; then
+              convert "111.jpg" -resize 512x512^ -gravity center -extent 512x512 apps/mobile/android/app/src/main/res/drawable/ic_app_icon.png
+            else
+              cp "111.jpg" apps/mobile/android/app/src/main/res/drawable/ic_app_icon.jpg
+            fi
+            ls -lh apps/mobile/public/app-icon.jpg apps/mobile/android/app/src/main/res/drawable/ic_app_icon.*
+          else
+            echo "::warning::111.jpg not found in repository root!"
           fi
           npm install --no-audit --no-fund
           npm run build

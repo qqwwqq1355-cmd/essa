@@ -4,6 +4,7 @@ import {
   cacheAudioInBackground,
   getCachedAudioUrl,
 } from './audioCache';
+import { pauseImageLoading, resumeImageLoading } from '../images/imageLoader';
 
 export interface AudioCallbacks {
   onTimeUpdate: (positionSec: number, durationSec: number, bufferedSec: number) => void;
@@ -22,6 +23,7 @@ export interface AudioCallbacks {
  */
 interface NativeAndroidBridge {
   onPlaybackStateChanged?: (isPlaying: boolean, title: string) => void;
+  updateNowPlaying?: (title: string, artist: string, coverUrl: string, isPlaying: boolean) => void;
   saveBase64Png?: (dataUrl: string, fileName: string) => void;
 }
 
@@ -36,6 +38,8 @@ class WebAudioEngine {
   private currentTrackId: string | null = null;
   private currentTrackTitle = 'مكتبة عيسى الليث';
   private wantToPlay = false;
+  private currentArtist = 'عيسى الليث';
+  private currentCover = '';
   private loadToken = 0;
   private pendingMetaHandler: (() => void) | null = null;
   private pendingCacheTimer: ReturnType<typeof setTimeout> | null = null;
@@ -94,16 +98,18 @@ class WebAudioEngine {
 
     el.addEventListener('playing', () => {
       if (this.audio !== el) return;
+      // بدأ الصوت فعلياً → نستأنف تحميل الصور بعد ثانية
+      setTimeout(resumeImageLoading, 1000);
       this.wantToPlay = true;
       this.callbacks?.onPlayStateChange(true, false);
-      getAndroidBridge()?.onPlaybackStateChanged?.(true, this.currentTrackTitle);
+      this.notifyNative(true);
     });
 
     el.addEventListener('pause', () => {
       if (this.audio !== el) return;
       if (!this.wantToPlay) {
         this.callbacks?.onPlayStateChange(false, false);
-        getAndroidBridge()?.onPlaybackStateChanged?.(false, this.currentTrackTitle);
+        this.notifyNative(false);
       }
     });
 
@@ -128,6 +134,7 @@ class WebAudioEngine {
 
     el.addEventListener('error', () => {
       if (this.audio !== el) return;
+      resumeImageLoading();
       if (!el.getAttribute('src')) return;
       this.wantToPlay = false;
       this.callbacks?.onPlayStateChange(false, false);
@@ -167,6 +174,21 @@ class WebAudioEngine {
     }
   }
 
+  private notifyNative(isPlaying: boolean) {
+    const bridge = getAndroidBridge();
+    if (!bridge) return;
+    if (bridge.updateNowPlaying) {
+      bridge.updateNowPlaying(
+        this.currentTrackTitle,
+        this.currentArtist,
+        this.currentCover,
+        isPlaying
+      );
+    } else {
+      bridge.onPlaybackStateChanged?.(isPlaying, this.currentTrackTitle);
+    }
+  }
+
   private updateMediaSessionMetadata(track: Track) {
     if (typeof navigator === 'undefined' || !('mediaSession' in navigator)) return;
     try {
@@ -195,6 +217,10 @@ class WebAudioEngine {
     this.wantToPlay = true;
     this.currentTrackId = track.id;
     this.currentTrackTitle = track.title;
+    this.currentArtist = track.poet ? `عيسى الليث • ${track.poet}` : 'عيسى الليث';
+    this.currentCover = track.coverUrl || '';
+    // الإشعار يظهر فوراً باسم الزامل الجديد وغلافه وأزرار التحكم
+    this.notifyNative(true);
 
     if (this.pendingMetaHandler) {
       this.audio.removeEventListener('loadedmetadata', this.pendingMetaHandler);
@@ -204,8 +230,9 @@ class WebAudioEngine {
       clearTimeout(this.pendingCacheTimer);
       this.pendingCacheTimer = null;
     }
-    // إلغاء أي تنزيل خلفي للزامل السابق فوراً حتى لا يزاحم الزامل الجديد!
+    // إلغاء أي تنزيل خلفي للزامل السابق + إيقاف كل طلبات الصور فوراً ليأخذ الصوت كامل الشبكة
     abortBackgroundCaching();
+    pauseImageLoading(6000);
 
     // إيقاف فوري للمشغّل القديم وإنشاء عنصر Audio نظيف تماماً للزامل الجديد (لفتح فوري مثل أول زامل!)
     const oldAudio = this.audio;
@@ -290,7 +317,7 @@ class WebAudioEngine {
     this.wantToPlay = false;
     this.audio.pause();
     this.callbacks?.onPlayStateChange(false, false);
-    getAndroidBridge()?.onPlaybackStateChanged?.(false, this.currentTrackTitle);
+    this.notifyNative(false);
   }
 
   seekTo(seconds: number): void {

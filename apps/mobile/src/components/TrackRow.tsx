@@ -3,6 +3,7 @@ import { Pressable, StyleSheet, Text, View } from 'react-native';
 import type { Track } from '@shared/types/track';
 import { FONTS, RADIUS, type ThemePalette } from '../theme/tokens';
 import { formatDuration } from '../utils/format';
+import { useAppStore } from '../store/useAppStore';
 import { TrackCover } from './TrackCover';
 import { Icon } from './Icon';
 
@@ -15,6 +16,7 @@ interface TrackRowProps {
   isDownloaded: boolean;
   downloadProgress?: number;
   snippet?: string | null;
+  autoLoadCover?: boolean;
   onPress: () => void;
   onLyricsPress: () => void;
   onToggleFavorite: () => void;
@@ -31,12 +33,16 @@ export const TrackRow: React.FC<TrackRowProps> = React.memo(({
   isDownloaded,
   downloadProgress,
   snippet,
+  autoLoadCover = true,
   onPress,
   onLyricsPress,
   onToggleFavorite,
   onDownloadPress,
   onPlaylistPress,
 }) => {
+  // لودنق دائري على غلاف الزامل المضغوط عليه فقط إلى أن يبدأ الصوت فعلياً
+  const isLoading = useAppStore((s) => isCurrent && s.isBuffering);
+
   return (
     <Pressable
       onPress={onPress}
@@ -60,7 +66,10 @@ export const TrackRow: React.FC<TrackRowProps> = React.memo(({
         size={54}
         borderRadius={14}
         isCurrent={isCurrent}
-        isPlaying={isCurrent && isPlaying}
+        isPlaying={isCurrent && isPlaying && !isLoading}
+        isLoading={isLoading}
+        title={track.title}
+        autoLoadCover={autoLoadCover}
       />
 
       <View style={styles.meta}>

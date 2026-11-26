@@ -232,7 +232,9 @@ export const FullPlayerModal: React.FC<FullPlayerModalProps> = ({ theme }) => {
                 size={224}
                 borderRadius={28}
                 isCurrent
-                isPlaying={isPlaying}
+                isPlaying={isPlaying && !isBuffering}
+                isLoading={isBuffering}
+                title={track.title}
                 titleInitial={track.title.charAt(0)}
               />
             </View>
@@ -644,7 +646,9 @@ export const FullPlayerModal: React.FC<FullPlayerModalProps> = ({ theme }) => {
                   size={42}
                   borderRadius={10}
                   isCurrent={active}
-                  isPlaying={active && isPlaying}
+                  isPlaying={active && isPlaying && !isBuffering}
+                  isLoading={active && isBuffering}
+                  title={qTrack.title}
                 />
                 <View style={styles.queueMeta}>
                   <Text

@@ -26,6 +26,7 @@ export const App: React.FC = () => {
     toggleTheme,
     connectionMode,
     tracks,
+    isSyncing,
     currentTrackId,
     isPlaying,
     isBuffering,
@@ -49,6 +50,7 @@ export const App: React.FC = () => {
       toggleTheme: s.toggleTheme,
       connectionMode: s.connectionMode,
       tracks: s.tracks,
+      isSyncing: s.isSyncing,
       currentTrackId: s.currentTrackId,
       isPlaying: s.isPlaying,
       isBuffering: s.isBuffering,
@@ -87,6 +89,22 @@ export const App: React.FC = () => {
     const hasCached = tracks.length > 0;
     void syncWithTelegramApi(apiBaseUrl, hasCached);
     // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
+
+  // أوامر إشعار النظام (السابق / تشغيل-إيقاف / التالي) القادمة من أندرويد
+  useEffect(() => {
+    (window as unknown as { __nativeMediaAction?: (a: string) => void }).__nativeMediaAction = (
+      action: string
+    ) => {
+      const s = useAppStore.getState();
+      if (action === 'next') void s.playNext();
+      else if (action === 'prev') void s.playPrevious();
+      else if (action === 'play') {
+        if (!s.isPlaying) void s.togglePlayPause();
+      } else if (action === 'pause') {
+        if (s.isPlaying || s.isBuffering) void s.togglePlayPause();
+      } else void s.togglePlayPause();
+    };
   }, []);
 
   // إدارة زر الرجوع (أندرويد والمتصفح) للعودة للرئيسية ثم إظهار نافذة تأكيد الخروج
@@ -200,7 +218,12 @@ export const App: React.FC = () => {
           onConfirmExit={handleConfirmExit}
         />
         <ToastBanner toast={toast} theme={theme} />
-        {showSplash && <SplashScreen onFinish={handleSplashFinish} />}
+        {showSplash && (
+          <SplashScreen
+            isReady={tracks.length > 0 || !isSyncing}
+            onFinish={handleSplashFinish}
+          />
+        )}
       </View>
     </WebDeviceFrame>
   );

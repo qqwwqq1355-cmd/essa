@@ -106,7 +106,7 @@ function mapRowToTrack(row, origin) {
     streamUrl: `${origin}/v1/tracks/${encodeURIComponent(row.id)}/stream?v=${encodeURIComponent(row.updated_at || '1')}`,
     coverUrl:
       row.cover_url && row.cover_url.startsWith('covers/')
-        ? `${origin}/v1/tracks/${encodeURIComponent(row.id)}/cover`
+        ? `${origin}/v1/covers/${encodeURIComponent(row.id)}.jpg`
         : row.cover_url ?? null,
     palette: getPalette(row.source_message_id),
     publishedAt: row.published_at,
@@ -249,6 +249,36 @@ export default {
         }
 
         return jsonResponse({ error: 'Method Not Allowed' }, 405);
+      }
+
+      // ⚡ مسارات سريعة جداً بدون أي استعلام قاعدة بيانات (R2 مباشرة) للصوت والأغلفة
+      const fastCoverMatch = pathname.match(/^\/v1\/covers\/(tg_\d+)(?:\.jpg)?$/);
+      if (fastCoverMatch && env.AUDIO_BUCKET && (request.method === 'GET' || request.method === 'HEAD')) {
+        const coverObj = await env.AUDIO_BUCKET.get(`covers/${fastCoverMatch[1]}.jpg`);
+        if (!coverObj) {
+          return new Response(null, { status: 404, headers: CORS_HEADERS });
+        }
+        const coverHeaders = new Headers(CORS_HEADERS);
+        coverHeaders.set('Content-Type', 'image/jpeg');
+        coverHeaders.set('Cache-Control', 'public, max-age=31536000, immutable');
+        return new Response(request.method === 'HEAD' ? null : coverObj.body, {
+          status: 200,
+          headers: coverHeaders,
+        });
+      }
+
+      const fastStreamMatch = pathname.match(/^\/v1\/tracks\/(tg_\d+)\/stream$/);
+      if (fastStreamMatch && env.AUDIO_BUCKET && (request.method === 'GET' || request.method === 'HEAD')) {
+        const fastRes = await streamFromR2Bucket(
+          env.AUDIO_BUCKET,
+          `audio/${fastStreamMatch[1]}.mp3`,
+          'audio/mpeg',
+          request
+        );
+        if (fastRes.status !== 404) {
+          return fastRes;
+        }
+        // غير موجود في R2 → يكمل للمسار التقليدي (مقاطع قديمة)
       }
 
       if (!env.DB) {

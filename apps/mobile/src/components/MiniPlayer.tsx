@@ -96,7 +96,9 @@ export const MiniPlayer: React.FC<MiniPlayerProps> = React.memo(({
             size={44}
             borderRadius={11}
             isCurrent
-            isPlaying={isPlaying}
+            isPlaying={isPlaying && !isBuffering}
+            isLoading={isBuffering}
+            title={track.title}
           />
 
           <View style={styles.info}>

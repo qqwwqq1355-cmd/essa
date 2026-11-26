@@ -48,6 +48,7 @@ export const HomeScreen: React.FC<HomeScreenProps> = React.memo(({ theme }) => {
     setSelectedCategory,
     currentTrackId,
     isPlaying,
+    isBuffering,
     favorites,
     downloadedIds,
     downloadingIds,
@@ -71,6 +72,7 @@ export const HomeScreen: React.FC<HomeScreenProps> = React.memo(({ theme }) => {
       setSelectedCategory: s.setSelectedCategory,
       currentTrackId: s.currentTrackId,
       isPlaying: s.isPlaying,
+      isBuffering: s.isBuffering,
       favorites: s.favorites,
       downloadedIds: s.downloadedIds,
       downloadingIds: s.downloadingIds,
@@ -267,7 +269,9 @@ export const HomeScreen: React.FC<HomeScreenProps> = React.memo(({ theme }) => {
               size={78}
               borderRadius={18}
               isCurrent={currentTrackId === featuredTrack.id}
-              isPlaying={currentTrackId === featuredTrack.id && isPlaying}
+              isPlaying={currentTrackId === featuredTrack.id && isPlaying && !isBuffering}
+              isLoading={currentTrackId === featuredTrack.id && isBuffering}
+              title={featuredTrack.title}
             />
             <View style={styles.heroMeta}>
               <Text style={styles.heroTitle} numberOfLines={2}>
@@ -326,7 +330,9 @@ export const HomeScreen: React.FC<HomeScreenProps> = React.memo(({ theme }) => {
                     size={46}
                     borderRadius={12}
                     isCurrent={currentTrackId === t.id}
-                    isPlaying={currentTrackId === t.id && isPlaying}
+                    isPlaying={currentTrackId === t.id && isPlaying && !isBuffering}
+                    isLoading={currentTrackId === t.id && isBuffering}
+                    title={t.title}
                   />
                   <View style={styles.continueMeta}>
                     <Text style={[styles.continueTitle, { color: theme.textPrimary }]} numberOfLines={1}>
@@ -426,7 +432,7 @@ export const HomeScreen: React.FC<HomeScreenProps> = React.memo(({ theme }) => {
               )}
             </View>
 
-            {visibleTracks.map((track) => (
+            {visibleTracks.map((track, idx) => (
               <TrackRow
                 key={track.id}
                 track={track}
@@ -436,6 +442,7 @@ export const HomeScreen: React.FC<HomeScreenProps> = React.memo(({ theme }) => {
                 isFavorite={favorites.includes(track.id)}
                 isDownloaded={downloadedIds.includes(track.id)}
                 downloadProgress={downloadingIds[track.id]}
+                autoLoadCover={idx < 40}
                 onPress={() => void playTrack(track.id, filteredIds)}
                 onLyricsPress={() => void playTrack(track.id, filteredIds, 'lyrics')}
                 onToggleFavorite={() => toggleFavorite(track.id)}
