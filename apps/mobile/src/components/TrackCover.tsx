@@ -22,6 +22,21 @@ function getInitial(title?: string): string {
   return m ? m[0] : title.trim().charAt(0);
 }
 
+function normalizeCoverUrl(url?: string | null): string | null {
+  if (!url) return null;
+  return url.startsWith('/offline/') ? `.${url}` : url;
+}
+
+function isLocalCoverUrl(url?: string | null): boolean {
+  if (!url) return false;
+  return (
+    url.startsWith('./') ||
+    url.startsWith('offline/') ||
+    url.startsWith('blob:') ||
+    url.startsWith('data:')
+  );
+}
+
 export const TrackCover: React.FC<TrackCoverProps> = React.memo(({
   palette,
   coverUrl,
@@ -38,12 +53,19 @@ export const TrackCover: React.FC<TrackCoverProps> = React.memo(({
   const showEq = isPlaying && !isLoading;
   const gradId = `g_${palette.primary.replace('#', '')}_${palette.accent.replace('#', '')}_${size}`;
   const glowId = `r_${palette.accent.replace('#', '')}_${size}`;
+  const resolvedUrl = normalizeCoverUrl(coverUrl);
+  const isLocal = isLocalCoverUrl(resolvedUrl);
   const [inView, setInView] = useState(size >= 100 || isCurrent);
-  const [ready, setReady] = useState(() => Boolean(coverUrl && isCoverLoaded(coverUrl)));
+  const [ready, setReady] = useState(() => Boolean(resolvedUrl && (isLocal || isCoverLoaded(resolvedUrl))));
+  const [localError, setLocalError] = useState(false);
   const anchorRef = useRef<HTMLDivElement | null>(null);
 
   useEffect(() => {
-    if (inView || !coverUrl) return;
+    setLocalError(false);
+  }, [resolvedUrl]);
+
+  useEffect(() => {
+    if (isLocal || inView || !resolvedUrl) return;
     const el = anchorRef.current;
     if (!el || typeof IntersectionObserver === 'undefined') {
       setInView(true);
@@ -60,15 +82,19 @@ export const TrackCover: React.FC<TrackCoverProps> = React.memo(({
     );
     obs.observe(el);
     return () => obs.disconnect();
-  }, [inView, coverUrl]);
+  }, [isLocal, inView, resolvedUrl]);
 
-  // تحميل الغلاف عبر طابور محدود (4 متزامنة + إعادة محاولة + إيقاف مؤقت أثناء فتح الصوت)
+  // للصور المحلية المدمجة: عرض فوري في 0ms بدون طابور شبكة؛ وللصور البعيدة: عبر الطابور المحدود
   useEffect(() => {
-    if (!coverUrl) {
+    if (!resolvedUrl) {
       setReady(false);
       return;
     }
-    if (isCoverLoaded(coverUrl)) {
+    if (isLocal) {
+      setReady(true);
+      return;
+    }
+    if (isCoverLoaded(resolvedUrl)) {
       setReady(true);
       return;
     }
@@ -77,16 +103,16 @@ export const TrackCover: React.FC<TrackCoverProps> = React.memo(({
     if (!autoLoadCover && (!isCurrent || isLoading)) return;
     if (!inView && !isCurrent) return;
     return loadCover(
-      coverUrl,
+      resolvedUrl,
       (ok) => {
         if (ok) setReady(true);
       },
       size >= 100 || isCurrent
     );
-  }, [coverUrl, inView, size, isCurrent, isLoading, autoLoadCover]);
+  }, [resolvedUrl, isLocal, inView, size, isCurrent, isLoading, autoLoadCover]);
 
-  // الصورة تُعرض فقط بعد اكتمال تحميلها فعلياً (بدون صور مكسورة أو فارغة تختفي)
-  const shouldRenderImg = Boolean(coverUrl && ready);
+  // الصورة تُعرض فقط بعد اكتمال تحميلها فعلياً (أو فوراً إذا كانت مدمجة داخل التطبيق)
+  const shouldRenderImg = Boolean(resolvedUrl && (isLocal ? !localError : ready));
 
   return (
     <View
@@ -104,10 +130,13 @@ export const TrackCover: React.FC<TrackCoverProps> = React.memo(({
       <div ref={anchorRef} style={{ width: size, height: size, position: 'relative' }}>
       {shouldRenderImg ? (
         <img
-          src={getLoadedCoverSrc(coverUrl!)}
+          src={isLocal ? resolvedUrl! : getLoadedCoverSrc(resolvedUrl!)}
           alt=""
           decoding="async"
-          onError={() => setReady(false)}
+          onError={() => {
+            if (isLocal) setLocalError(true);
+            else setReady(false);
+          }}
           style={{
             width: size,
             height: size,

@@ -2,6 +2,7 @@ import type { Track } from '@shared/types/track';
 import {
   abortBackgroundCaching,
   cacheAudioInBackground,
+  getCachedAudioUrl,
   getMemoryCachedAudioUrl,
 } from './audioCache';
 import { pauseImageLoading, resumeImageLoading } from '../images/imageLoader';
@@ -110,7 +111,7 @@ class WebAudioEngine {
           cacheAudioInBackground(target.url, () => {
             this.callbacks?.onTrackCached?.(target.trackId);
           });
-        }, 15000);
+        }, 35000);
       }
       this.wantToPlay = true;
       this.callbacks?.onPlayStateChange(true, false);
@@ -204,7 +205,7 @@ class WebAudioEngine {
   private updateMediaSessionMetadata(track: Track) {
     if (typeof navigator === 'undefined' || !('mediaSession' in navigator)) return;
     try {
-      const artworkUrl = track.coverUrl || '/app-icon.jpg';
+      const artworkUrl = track.coverUrl || './app-icon.jpg';
       navigator.mediaSession.metadata = new MediaMetadata({
         title: track.title,
         artist: track.poet ? `عيسى الليث • ${track.poet}` : 'عيسى الليث',
@@ -219,7 +220,12 @@ class WebAudioEngine {
     }
   }
 
-  async loadAndPlay(track: Track, startPositionSec = 0, playbackRate = 1): Promise<void> {
+  async loadAndPlay(
+    track: Track,
+    startPositionSec = 0,
+    playbackRate = 1,
+    preferOfflineCache = false
+  ): Promise<void> {
     if (!track.streamUrl) {
       this.callbacks?.onError('رابط البث غير متوفر لهذا المقطع بعد.');
       return;
@@ -256,8 +262,12 @@ class WebAudioEngine {
     this.audio = nextAudio;
     this.callbacks?.onPlayStateChange(true, true);
 
-    // تشغيل متزامن فوري (0ms بدون أي await قبل play) للحفاظ على استجابة النقر الفورية في Chrome!
-    const cachedUrl = getMemoryCachedAudioUrl(track.streamUrl);
+    // تشغيل متزامن فوري للذاكرة، وفقط للمقاطع المحفوظة نبحث في الكاش المحلي على القرص
+    let cachedUrl = getMemoryCachedAudioUrl(track.streamUrl);
+    if (!cachedUrl && preferOfflineCache) {
+      cachedUrl = await getCachedAudioUrl(track.streamUrl);
+      if (token !== this.loadToken || this.audio !== nextAudio) return;
+    }
     nextAudio.src = cachedUrl ?? track.streamUrl;
     nextAudio.playbackRate = playbackRate;
     this.updateMediaSessionMetadata(track);

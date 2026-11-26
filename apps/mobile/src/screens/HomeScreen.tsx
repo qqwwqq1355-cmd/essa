@@ -1,4 +1,4 @@
-import React, { useEffect, useMemo, useState } from 'react';
+import React, { useEffect, useMemo, useRef, useState } from 'react';
 import { ActivityIndicator, Pressable, ScrollView, StyleSheet, Text, View } from 'react-native';
 import { useShallow } from 'zustand/react/shallow';
 import type { TrackCategory } from '@shared/types/track';
@@ -122,11 +122,52 @@ export const HomeScreen: React.FC<HomeScreenProps> = React.memo(({ theme }) => {
     return base;
   }, [sortedAllTracks, selectedCategory, sortMode]);
 
-  // عرض تدريجي فائق السلاسة (40 مقطعاً في كل دفعة لضمان 60/120 FPS حتى مع آلاف الزوامل)
-  const [visibleCount, setVisibleCount] = useState(40);
+  // عرض تدريجي فائق السلاسة مع حفظ عدد العناصر وموضع التمرير عند التبديل أو العودة للتطبيق
+  const scrollRef = useRef<{ scrollTo?: (opts: { y: number; animated?: boolean }) => void } | null>(null);
+  const [visibleCount, setVisibleCount] = useState<number>(() => {
+    try {
+      const saved = Number(sessionStorage.getItem('essa_home_visible_count') || 40);
+      return Number.isFinite(saved) && saved >= 40 ? saved : 40;
+    } catch {
+      return 40;
+    }
+  });
+  const isFirstMountRef = useRef(true);
   useEffect(() => {
+    if (isFirstMountRef.current) {
+      isFirstMountRef.current = false;
+      try {
+        const savedY = Number(sessionStorage.getItem('essa_home_scroll_y') || 0);
+        if (savedY > 0) {
+          setTimeout(() => {
+            scrollRef.current?.scrollTo({ y: savedY, animated: false });
+          }, 60);
+        }
+      } catch {
+        // تجاهل
+      }
+      return;
+    }
     setVisibleCount(40);
+    try {
+      sessionStorage.setItem('essa_home_visible_count', '40');
+      sessionStorage.setItem('essa_home_scroll_y', '0');
+    } catch {
+      // تجاهل
+    }
   }, [selectedCategory, sortMode]);
+
+  const handleLoadMore = () => {
+    setVisibleCount((c) => {
+      const next = c + 50;
+      try {
+        sessionStorage.setItem('essa_home_visible_count', String(next));
+      } catch {
+        // تجاهل
+      }
+      return next;
+    });
+  };
   const visibleTracks = useMemo(
     () => filteredTracks.slice(0, visibleCount),
     [filteredTracks, visibleCount]
@@ -157,9 +198,20 @@ export const HomeScreen: React.FC<HomeScreenProps> = React.memo(({ theme }) => {
 
   return (
     <ScrollView
+      ref={scrollRef as never}
       style={styles.scroll}
       contentContainerStyle={styles.container}
       showsVerticalScrollIndicator={false}
+      onScroll={(e: { nativeEvent?: { contentOffset?: { y?: number } } }) => {
+        try {
+          const y = e?.nativeEvent?.contentOffset?.y;
+          if (typeof y === 'number') {
+            sessionStorage.setItem('essa_home_scroll_y', String(Math.round(y)));
+          }
+        } catch {
+          // تجاهل
+        }
+      }}
     >
       {/* الترويسة الرئيسية */}
       <View style={styles.header}>
@@ -455,7 +507,7 @@ export const HomeScreen: React.FC<HomeScreenProps> = React.memo(({ theme }) => {
 
             {visibleCount < filteredTracks.length && (
               <Pressable
-                onPress={() => setVisibleCount((c) => c + 50)}
+                onPress={handleLoadMore}
                 style={[styles.loadMoreBtn, { backgroundColor: theme.surface, borderColor: theme.borderStrong }]}
               >
                 <Text style={[styles.loadMoreText, { color: theme.accent }]}>

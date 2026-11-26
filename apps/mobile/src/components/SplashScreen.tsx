@@ -81,7 +81,7 @@ export const SplashScreen: React.FC<SplashScreenProps> = ({ isReady, onFinish })
         <View style={styles.emblemRing}>
           {!imgError ? (
             <img
-              src="/app-icon.jpg"
+              src="./app-icon.jpg"
               alt="عيسى الليث"
               onError={() => setImgError(true)}
               style={{

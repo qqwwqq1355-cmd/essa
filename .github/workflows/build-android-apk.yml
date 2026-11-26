@@ -40,6 +40,9 @@ jobs:
         with:
           gradle-version: '8.10.2'
 
+      - name: Ensure FFmpeg for Ultra-Light Icons & Covers
+        run: which ffmpeg || (sudo apt-get update && sudo apt-get install -y ffmpeg)
+
       - name: Install Dependencies & Build Production Mobile Bundle
         env:
           VITE_API_BASE_URL: https://essa-pages-proxy.vercel.app
@@ -48,18 +51,24 @@ jobs:
           if [ -f "111.jpg" ]; then
             mkdir -p apps/mobile/public
             cp "111.jpg" apps/mobile/public/app-icon.jpg
-            rm -f apps/mobile/android/app/src/main/res/drawable/ic_app_icon.xml apps/mobile/android/app/src/main/res/drawable/ic_app_icon.jpg
-            if command -v convert >/dev/null 2>&1; then
-              convert "111.jpg" -resize 512x512^ -gravity center -extent 512x512 apps/mobile/android/app/src/main/res/drawable/ic_app_icon.png
-            else
-              cp "111.jpg" apps/mobile/android/app/src/main/res/drawable/ic_app_icon.jpg
-            fi
-            ls -lh apps/mobile/public/app-icon.jpg apps/mobile/android/app/src/main/res/drawable/ic_app_icon.*
+            rm -f apps/mobile/android/app/src/main/res/drawable/ic_app_icon.xml \
+                  apps/mobile/android/app/src/main/res/drawable/ic_launcher_background.xml \
+                  apps/mobile/android/app/src/main/res/drawable/ic_launcher_foreground.xml \
+                  apps/mobile/android/app/src/main/res/drawable/ic_app_icon.jpg \
+                  apps/mobile/android/app/src/main/res/drawable/ic_app_icon.png
+            mkdir -p apps/mobile/android/app/src/main/res/drawable-nodpi
+            ffmpeg -y -i "111.jpg" -vf "scale=512:512:force_original_aspect_ratio=increase,crop=512:512" \
+              apps/mobile/android/app/src/main/res/drawable-nodpi/ic_app_icon.png
+            ffmpeg -y -i "111.jpg" -vf "scale=312:312:force_original_aspect_ratio=increase,crop=312:312,pad=432:432:60:60:#1A2618" \
+              apps/mobile/android/app/src/main/res/drawable-nodpi/ic_app_icon_fg.png
+            ls -lh apps/mobile/public/app-icon.jpg apps/mobile/android/app/src/main/res/drawable-nodpi/
           else
-            echo "::warning::111.jpg not found in repository root!"
+            echo "::error::111.jpg not found in repository root!"
+            exit 1
           fi
           npm install --no-audit --no-fund
           node scripts/bundle-offline-catalog.mjs
+          du -sh apps/mobile/public/offline || true
           npm run build
 
       - name: Embed Built App into Android Assets

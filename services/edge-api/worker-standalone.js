@@ -136,6 +136,36 @@ async function streamFromR2Bucket(bucket, objectKey, mimeType, request) {
     return new Response(null, { status: 200, headers });
   }
 
+  // معالجة ذكية للطلبات المفتوحة (Range: bytes=0-) حتى لا يسحب المتصفح الملف كاملاً ويغلق سرعة الإنترنت
+  const openRangeMatch = rangeHeader ? rangeHeader.match(/^bytes=(\d+)-\s*$/i) : null;
+  if (openRangeMatch) {
+    const start = Number(openRangeMatch[1]);
+    // أول طلب (start === 0): 128KB فقط (~11 ثانية صوت) ليفتح الزامل فوراً ويفرغ الخط تماماً لأي تبديل!
+    // الطلبات التالية أثناء الاستماع (start > 0): 384KB (~32 ثانية صوت) لاستمرار سلس بدون تقطيع
+    const chunkBytes = start === 0 ? 131072 : 393216;
+    const object = await bucket.get(objectKey, { range: { offset: start, length: chunkBytes } });
+    if (!object) {
+      return jsonResponse({ error: 'Audio object not found in Cloudflare R2.', key: objectKey }, 404);
+    }
+    if (start >= object.size) {
+      return new Response(null, {
+        status: 416,
+        headers: { ...CORS_HEADERS, 'Content-Range': `bytes */${object.size}` },
+      });
+    }
+    const actualLength = Math.min(chunkBytes, object.size - start);
+    const end = start + actualLength - 1;
+    const headers = new Headers(CORS_HEADERS);
+    object.writeHttpMetadata(headers);
+    headers.set('Content-Type', mimeType || 'audio/mpeg');
+    headers.set('Accept-Ranges', 'bytes');
+    headers.set('Cache-Control', 'public, max-age=86400, no-transform');
+    if (object.httpEtag) headers.set('ETag', object.httpEtag);
+    headers.set('Content-Range', `bytes ${start}-${end}/${object.size}`);
+    headers.set('Content-Length', String(actualLength));
+    return new Response(object.body, { status: 206, headers });
+  }
+
   const object = rangeHeader
     ? await bucket.get(objectKey, { range: request.headers })
     : await bucket.get(objectKey);

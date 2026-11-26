@@ -43,8 +43,10 @@ async function fetchAllTracks() {
 
 async function downloadAndCompressCover(track, useFfmpeg) {
   if (!track.coverUrl) return null;
-  const fileName = `${track.id}.jpg`;
-  const outPath = path.join(COVERS_DIR, fileName);
+  const webpName = `${track.id}.webp`;
+  const jpgName = `${track.id}.jpg`;
+  const webpPath = path.join(COVERS_DIR, webpName);
+  const jpgPath = path.join(COVERS_DIR, jpgName);
   const tmpPath = path.join(COVERS_DIR, `${track.id}.tmp.jpg`);
 
   try {
@@ -53,6 +55,7 @@ async function downloadAndCompressCover(track, useFfmpeg) {
     const buf = Buffer.from(await res.arrayBuffer());
     if (buf.length < 200) return null;
 
+    let finalName = jpgName;
     if (useFfmpeg) {
       fs.writeFileSync(tmpPath, buf);
       try {
@@ -63,22 +66,30 @@ async function downloadAndCompressCover(track, useFfmpeg) {
             '-i',
             tmpPath,
             '-vf',
-            'scale=160:160:force_original_aspect_ratio=increase,crop=160:160',
+            'scale=96:96:force_original_aspect_ratio=increase,crop=96:96',
+            '-c:v',
+            'libwebp',
+            '-lossless',
+            '0',
+            '-compression_level',
+            '6',
             '-q:v',
-            '8',
-            outPath,
+            '52',
+            webpPath,
           ],
           { stdio: 'ignore' }
         );
         fs.rmSync(tmpPath, { force: true });
+        finalName = webpName;
       } catch {
-        fs.renameSync(tmpPath, outPath);
+        fs.renameSync(tmpPath, jpgPath);
+        finalName = jpgName;
       }
     } else {
-      fs.writeFileSync(outPath, buf);
+      fs.writeFileSync(jpgPath, buf);
     }
 
-    return `/offline/covers/${fileName}`;
+    return `./offline/covers/${finalName}`;
   } catch {
     return null;
   }
@@ -109,13 +120,17 @@ async function main() {
 
   await Promise.all(Array.from({ length: CONCURRENCY }, () => worker()));
 
+  const slimTracks = tracks.map((t) => {
+    const { titleNormalized: _tn, lyricsNormalized: _ln, ...rest } = t;
+    return rest;
+  });
+
   const catalogPath = path.join(OUT_DIR, 'catalog.json');
-  fs.writeFileSync(catalogPath, JSON.stringify({ tracks }), 'utf8');
+  fs.writeFileSync(catalogPath, JSON.stringify({ tracks: slimTracks }), 'utf8');
   const jsonKb = Math.round(fs.statSync(catalogPath).size / 1024);
-  console.log(`[bundle-offline] ✓ Saved ${tracks.length} tracks (${jsonKb} KB) + ${bundledCovers} compressed covers!`);
+  console.log(`[bundle-offline] ✓ Saved ${slimTracks.length} tracks (${jsonKb} KB) + ${bundledCovers} compressed covers!`);
 }
 
 main().catch((err) => {
   console.warn('[bundle-offline] Non-fatal warning:', err?.message || err);
 });
-

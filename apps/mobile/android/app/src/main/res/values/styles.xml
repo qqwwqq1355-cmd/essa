@@ -1,11 +1,9 @@
 <?xml version="1.0" encoding="utf-8"?>
 <resources>
-    <style name="Theme.EssaAllaith" parent="Theme.Material3.DayNight.NoActionBar">
+    <color name="ic_launcher_bg">#1A2618</color>
+    <style name="Theme.EssaAllaith" parent="Theme.AppCompat.NoActionBar">
         <item name="android:windowBackground">#0A0C10</item>
         <item name="android:statusBarColor">#0A0C10</item>
         <item name="android:navigationBarColor">#0A0C10</item>
-        <item name="colorPrimary">#E2A84B</item>
-        <item name="colorSecondary">#2EC492</item>
     </style>
 </resources>
-

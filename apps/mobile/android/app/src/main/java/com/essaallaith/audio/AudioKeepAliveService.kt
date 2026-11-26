@@ -109,7 +109,7 @@ class AudioKeepAliveService : Service() {
         updateSession()
         publish()
 
-        if (coverUrl.isNotBlank() && coverBitmapUrl != coverUrl) {
+        if (coverBitmapUrl != coverUrl || coverBitmap == null) {
             loadCoverAsync(coverUrl)
         }
     }
@@ -216,14 +216,20 @@ class AudioKeepAliveService : Service() {
         )
     }
 
-    /** تحميل غلاف الزامل في الخلفية ثم تحديث الإشعار بالصورة */
+    private fun decodeFallbackAppBitmap(): Bitmap? {
+        return BitmapFactory.decodeResource(resources, R.drawable.ic_app_icon_fg)
+            ?: BitmapFactory.decodeResource(resources, R.drawable.ic_app_icon)
+    }
+
+    /** تحميل غلاف الزامل (من أصول التطبيق المدمجة أو الإنترنت، مع صورة التطبيق كبديل) ثم تحديث الإشعار */
     private fun loadCoverAsync(url: String) {
         io.execute {
             val bitmap = try {
-                downloadBitmap(url)
+                loadBitmapForUrl(url)
             } catch (_: Exception) {
                 null
-            }
+            } ?: decodeFallbackAppBitmap()
+
             if (bitmap != null && url == coverUrl) {
                 coverBitmap = bitmap
                 coverBitmapUrl = url
@@ -234,6 +240,17 @@ class AudioKeepAliveService : Service() {
                 }
             }
         }
+    }
+
+    private fun loadBitmapForUrl(url: String): Bitmap? {
+        if (url.isBlank()) {
+            return decodeFallbackAppBitmap()
+        }
+        if (url.startsWith("./offline/") || url.startsWith("offline/") || url.startsWith("/offline/")) {
+            val cleanRel = url.removePrefix("./").removePrefix("/")
+            return assets.open("www/$cleanRel").use { BitmapFactory.decodeStream(it) }
+        }
+        return downloadBitmap(url)
     }
 
     private fun downloadBitmap(url: String): Bitmap? {

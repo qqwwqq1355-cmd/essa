@@ -643,6 +643,7 @@ export const FullPlayerModal: React.FC<FullPlayerModalProps> = ({ theme }) => {
                 </Text>
                 <TrackCover
                   palette={qTrack.palette}
+                  coverUrl={qTrack.coverUrl}
                   size={42}
                   borderRadius={10}
                   isCurrent={active}

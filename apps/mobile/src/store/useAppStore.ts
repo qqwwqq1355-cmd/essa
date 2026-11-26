@@ -94,13 +94,54 @@ function savePersisted(state: PersistedState) {
   }
 }
 
+const bundledCoversMap = new Map<string, string>();
+let bundledCatalogPromise: Promise<Track[]> | null = null;
+
+function normalizeOfflineCoverUrl(url?: string | null): string | null {
+  if (!url) return null;
+  return url.startsWith('/offline/') ? `.${url}` : url;
+}
+
+async function loadBundledCatalogOnce(): Promise<Track[]> {
+  if (bundledCatalogPromise) return bundledCatalogPromise;
+  bundledCatalogPromise = (async () => {
+    try {
+      const localRes = await fetch('./offline/catalog.json');
+      if (!localRes.ok) return [];
+      const localData = (await localRes.json()) as { tracks?: Track[] };
+      if (!Array.isArray(localData.tracks) || localData.tracks.length === 0) return [];
+      const hydrated = localData.tracks.map((t) => {
+        const coverUrl = normalizeOfflineCoverUrl(t.coverUrl);
+        if (coverUrl && (coverUrl.startsWith('./offline/') || coverUrl.startsWith('offline/'))) {
+          bundledCoversMap.set(t.id, coverUrl);
+        }
+        return {
+          ...t,
+          coverUrl,
+          titleNormalized: t.titleNormalized || normalizeArabic(t.title),
+          lyricsNormalized: t.lyricsNormalized || normalizeArabic(t.lyrics),
+        };
+      });
+      return hydrated;
+    } catch {
+      return [];
+    }
+  })();
+  return bundledCatalogPromise;
+}
+
 function loadCachedTracks(): Track[] {
   try {
     const raw = localStorage.getItem(TRACKS_CACHE_KEY);
     if (!raw) return [];
     const parsed = JSON.parse(raw) as Track[];
     if (!Array.isArray(parsed)) return [];
-    return parsed.filter((t) => t && !t.isDemoPreview && isNotPreviewId(t.id));
+    return parsed
+      .filter((t) => t && !t.isDemoPreview && isNotPreviewId(t.id))
+      .map((t) => ({
+        ...t,
+        coverUrl: normalizeOfflineCoverUrl(t.coverUrl),
+      }));
   } catch {
     return [];
   }
@@ -377,7 +418,12 @@ export const useAppStore = create<AppState>((set, get) => {
         playerInitialTab: openTab ?? state.playerInitialTab,
       });
 
-      await audioEngine.loadAndPlay(track, resumePos, state.playbackRate);
+      await audioEngine.loadAndPlay(
+        track,
+        resumePos,
+        state.playbackRate,
+        state.downloadedIds.includes(trackId)
+      );
     },
 
     togglePlayPause: async () => {
@@ -637,38 +683,60 @@ export const useAppStore = create<AppState>((set, get) => {
       set({ isSyncing: true, syncError: null });
 
       try {
-        // 1) تحميل الفهرس والصور المدمجة داخل التطبيق فوراً (0ms أوفلاين!) إذا لم تكن القائمة محمّلة بعد
-        if (state.tracks.length === 0) {
-          try {
-            const localRes = await fetch('/offline/catalog.json');
-            if (localRes.ok) {
-              const localData = (await localRes.json()) as { tracks?: Track[] };
-              if (Array.isArray(localData.tracks) && localData.tracks.length > 0) {
-                set((s) => ({
-                  tracks: localData.tracks!,
-                  currentTrackId: s.currentTrackId ?? localData.tracks![0]?.id ?? null,
-                  queueIds: localData.tracks!.map((t) => t.id),
-                }));
-              }
-            }
-          } catch {
-            // تجاهل في بيئة التطوير إذا لم يُبنَ الفهرس المدمج بعد
+        // 1) تهيئة الفهرس والصور المدمجة داخل التطبيق دائماً في 0ms (حتى لو كان الكاش ممتلئاً سابقاً)
+        const bundledTracks = await loadBundledCatalogOnce();
+        if (bundledTracks.length > 0) {
+          const currentTracks = get().tracks;
+          if (currentTracks.length === 0) {
+            set((s) => ({
+              tracks: bundledTracks,
+              currentTrackId: s.currentTrackId ?? bundledTracks[0]?.id ?? null,
+              queueIds: bundledTracks.map((t) => t.id),
+              isSyncing: false,
+            }));
+          } else if (bundledCoversMap.size > 0) {
+            set((s) => ({
+              tracks: s.tracks.map((t) => {
+                const localCover = bundledCoversMap.get(t.id);
+                return localCover && t.coverUrl !== localCover ? { ...t, coverUrl: localCover } : t;
+              }),
+            }));
           }
         }
 
-        const response = await fetchDeltaSync(targetUrl);
-        const existingCoverById = new Map(
-          get()
-            .tracks.filter((t) => t.coverUrl?.startsWith('/offline/covers/'))
-            .map((t) => [t.id, t.coverUrl!])
-        );
-        const liveTracks = response.tracks
-          .filter((t) => !t.isDeleted)
-          .map((t) => {
-            const bundledCover = existingCoverById.get(t.id);
-            return bundledCover ? { ...t, coverUrl: bundledCover } : t;
-          });
-        const localImported = state.tracks.filter((t) => t.storageProvider === 'local');
+        // 2) مزامنة تفاضلية حقيقية (sinceIso) تجلب فقط الجديد أو المحدّث بدلاً من سحب كل المكتبة في كل مرة!
+        const existingReal = get().tracks.filter((t) => t.storageProvider !== 'local');
+        let sinceIso: string | undefined;
+        if (existingReal.length > 0) {
+          let maxUpdated = '';
+          for (const t of existingReal) {
+            if (t.updatedAt && t.updatedAt > maxUpdated) {
+              maxUpdated = t.updatedAt;
+            }
+          }
+          if (maxUpdated) sinceIso = maxUpdated;
+        }
+
+        const response = await fetchDeltaSync(targetUrl, sinceIso);
+        const mergedMap = new Map<string, Track>(existingReal.map((t) => [t.id, t]));
+        for (const t of response.tracks) {
+          if (t.isDeleted) {
+            mergedMap.delete(t.id);
+          } else {
+            const bundledCover = bundledCoversMap.get(t.id);
+            mergedMap.set(t.id, {
+              ...t,
+              coverUrl: bundledCover || normalizeOfflineCoverUrl(t.coverUrl),
+            });
+          }
+        }
+
+        const liveTracks = Array.from(mergedMap.values()).sort((a, b) => {
+          const timeDiff = new Date(b.publishedAt).getTime() - new Date(a.publishedAt).getTime();
+          if (timeDiff !== 0) return timeDiff;
+          return (b.sourceMessageId || 0) - (a.sourceMessageId || 0);
+        });
+        const localImported = get().tracks.filter((t) => t.storageProvider === 'local');
         const combined = [...localImported, ...liveTracks];
         const now = response.serverTime || new Date().toISOString();
 
@@ -698,8 +766,9 @@ export const useAppStore = create<AppState>((set, get) => {
         }
       } catch (err) {
         const msg = err instanceof Error ? err.message : 'تعذّر الاتصال بالخادم — تعمل المكتبة بالوضع المحلي';
-        set({ isSyncing: false, syncError: msg, connectionMode: 'offline' });
-        if (!silent) {
+        const hasTracks = get().tracks.length > 0;
+        set({ isSyncing: false, syncError: hasTracks ? null : msg, connectionMode: 'offline' });
+        if (!silent && !hasTracks) {
           get().showToast(msg, 'error');
         }
       }
