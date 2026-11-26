@@ -1,6 +1,6 @@
 import type { HealthResponse, SyncResponse } from '@shared/types/track';
 
-const FALLBACK_PRODUCTION_API = 'https://essa-66d.pages.dev';
+const FALLBACK_PRODUCTION_API = 'https://essa-pages-proxy.vercel.app';
 const DEFAULT_API_BASE = (import.meta.env.VITE_API_BASE_URL || FALLBACK_PRODUCTION_API)
   .trim()
   .replace(/\/+$/, '');
@@ -11,9 +11,7 @@ export function getDefaultApiBaseUrl(): string {
 
 export async function fetchApiHealth(baseUrl: string): Promise<HealthResponse> {
   const clean = baseUrl.trim().replace(/\/+$/, '');
-  const res = await fetch(`${clean}/v1/health`, {
-    headers: { 'X-App-Client': 'essa-alleth-rn-web' },
-  });
+  const res = await fetch(`${clean}/v1/health`);
   if (!res.ok) {
     throw new Error(`فشل الاتصال بالخادم (HTTP ${res.status})`);
   }
@@ -30,19 +28,17 @@ export async function fetchDeltaSync(baseUrl: string, sinceIso?: string): Promis
     const params = new URLSearchParams({ limit: '250', offset: String(offset) });
     if (sinceIso) params.set('since', sinceIso);
 
-    const res = await fetch(`${clean}/v1/sync?${params.toString()}`, {
-      headers: { 'X-App-Client': 'essa-alleth-rn-web' },
-    });
+    const res = await fetch(`${clean}/v1/sync?${params.toString()}`);
     if (!res.ok) {
       throw new Error(`تعذرت المزامنة من الخادم (HTTP ${res.status})`);
     }
     const data = (await res.json()) as SyncResponse;
     lastMeta = data;
     const rewrittenTracks = data.tracks.map((t) => {
-      if (t.streamUrl && /^https?:\/\/[^/]+\.workers\.dev\//i.test(t.streamUrl)) {
+      if (t.streamUrl && /^https?:\/\/[^/]+\.(workers|pages)\.dev\//i.test(t.streamUrl)) {
         return {
           ...t,
-          streamUrl: t.streamUrl.replace(/^https?:\/\/[^/]+\.workers\.dev/i, clean),
+          streamUrl: t.streamUrl.replace(/^https?:\/\/[^/]+\.(workers|pages)\.dev/i, clean),
         };
       }
       return t;

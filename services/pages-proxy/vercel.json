@@ -1,0 +1,20 @@
+{
+  "rewrites": [
+    {
+      "source": "/v1/:path*",
+      "destination": "https://essa-alleth-edge-api.qqwwqq1355.workers.dev/v1/:path*"
+    }
+  ],
+  "headers": [
+    {
+      "source": "/v1/(.*)",
+      "headers": [
+        { "key": "Access-Control-Allow-Origin", "value": "*" },
+        { "key": "Access-Control-Allow-Methods", "value": "GET, HEAD, POST, OPTIONS" },
+        { "key": "Access-Control-Allow-Headers", "value": "Content-Type, Range, X-App-Client, Authorization" },
+        { "key": "Access-Control-Expose-Headers", "value": "Content-Length, Content-Range, Accept-Ranges, Content-Type" }
+      ]
+    }
+  ]
+}
+

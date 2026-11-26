@@ -64,7 +64,11 @@ function loadPersisted(): PersistedState {
     if (!raw) return DEFAULT_PERSISTED;
     const parsed = JSON.parse(raw) as Partial<PersistedState>;
     const merged: PersistedState = { ...DEFAULT_PERSISTED, ...parsed };
-    if (!merged.apiBaseUrl || merged.apiBaseUrl.includes('workers.dev')) {
+    if (
+      !merged.apiBaseUrl ||
+      merged.apiBaseUrl.includes('workers.dev') ||
+      merged.apiBaseUrl.includes('pages.dev')
+    ) {
       merged.apiBaseUrl = getDefaultApiBaseUrl();
     }
     // تنظيف أي معرفات تجريبية قديمة إن وُجدت
