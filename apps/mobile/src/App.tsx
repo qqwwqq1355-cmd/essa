@@ -1,4 +1,4 @@
-import React, { useEffect, useMemo, useRef } from 'react';
+import React, { useCallback, useEffect, useMemo, useState } from 'react';
 import { StyleSheet, View } from 'react-native';
 import { useShallow } from 'zustand/react/shallow';
 import { DARK_THEME, LIGHT_THEME } from './theme/tokens';
@@ -10,6 +10,8 @@ import { FullPlayerModal } from './components/FullPlayerModal';
 import { LyricsCardModal } from './components/LyricsCardModal';
 import { PlaylistPickerModal } from './components/PlaylistPickerModal';
 import { ToastBanner } from './components/ToastBanner';
+import { SplashScreen } from './components/SplashScreen';
+import { ExitConfirmModal } from './components/ExitConfirmModal';
 import { HomeScreen } from './screens/HomeScreen';
 import { SearchScreen } from './screens/SearchScreen';
 import { LibraryScreen } from './screens/LibraryScreen';
@@ -65,7 +67,20 @@ export const App: React.FC = () => {
     }))
   );
 
-  const lastBackPressRef = useRef<number>(0);
+  const [showSplash, setShowSplash] = useState(true);
+  const [showExitModal, setShowExitModal] = useState(false);
+
+  const handleSplashFinish = useCallback(() => setShowSplash(false), []);
+
+  const handleConfirmExit = useCallback(() => {
+    setShowExitModal(false);
+    const bridge = (window as unknown as { AndroidBridge?: { exitApp?: () => void } }).AndroidBridge;
+    if (bridge?.exitApp) {
+      bridge.exitApp();
+      return;
+    }
+    window.history.go(-2);
+  }, []);
 
   // مزامنة تلقائية فور فتح التطبيق (بصمت إذا كانت المكتبة مخبأة محلياً)
   useEffect(() => {
@@ -74,11 +89,10 @@ export const App: React.FC = () => {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
-  // إدارة زر الرجوع (أندرويد والمتصفح) للعودة للرئيسية بدلاً من الخروج المباشر
+  // إدارة زر الرجوع (أندرويد والمتصفح) للعودة للرئيسية ثم إظهار نافذة تأكيد الخروج
   useEffect(() => {
     if (typeof window === 'undefined') return;
 
-    // إضافة حالة حارس في سجل المتصفح عند البداية
     window.history.replaceState({ appRoot: true }, '');
     window.history.pushState({ appGuard: true }, '');
 
@@ -104,30 +118,18 @@ export const App: React.FC = () => {
     };
 
     const onPopState = () => {
-      const handled = handleBackAction();
-      if (handled) {
+      if (handleBackAction()) {
         window.history.pushState({ appGuard: true }, '');
         return;
       }
-      const now = Date.now();
-      if (now - lastBackPressRef.current < 2000) {
-        // السماح بالخروج عند الضغط مرتين متتاليتين في الرئيسية
-        return;
-      }
-      lastBackPressRef.current = now;
-      showToast('اضغط رجوع مرة أخرى للخروج من التطبيق', 'info');
+      setShowExitModal((prev) => !prev);
       window.history.pushState({ appGuard: true }, '');
     };
 
     window.addEventListener('popstate', onPopState);
-    // دعم مباشر لـ Android WebView إذا استدعى handleAppBack()
     (window as unknown as { handleAppBack?: () => boolean }).handleAppBack = () => {
-      const handled = handleBackAction();
-      if (handled) return true;
-      const now = Date.now();
-      if (now - lastBackPressRef.current < 2000) return false;
-      lastBackPressRef.current = now;
-      showToast('اضغط رجوع مرة أخرى للخروج من التطبيق', 'info');
+      if (handleBackAction()) return true;
+      setShowExitModal((prev) => !prev);
       return true;
     };
 
@@ -191,7 +193,14 @@ export const App: React.FC = () => {
         <FullPlayerModal theme={theme} />
         <LyricsCardModal theme={theme} />
         <PlaylistPickerModal theme={theme} />
+        <ExitConfirmModal
+          visible={showExitModal}
+          theme={theme}
+          onStay={() => setShowExitModal(false)}
+          onConfirmExit={handleConfirmExit}
+        />
         <ToastBanner toast={toast} theme={theme} />
+        {showSplash && <SplashScreen onFinish={handleSplashFinish} />}
       </View>
     </WebDeviceFrame>
   );

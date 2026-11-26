@@ -447,4 +447,41 @@ export default {
       );
     }
   },
+
+  /**
+   * مُشغّل مجدول مجاني 100% على Cloudflare Workers (Cron Trigger)
+   * يرسل طلباً لـ GitHub Actions كل 5 دقائق لتشغيل وركفلو telegram-sync.yml بدقة تامة!
+   */
+  async scheduled(_event, env) {
+    const token = (env.GITHUB_DISPATCH_TOKEN || '').trim();
+    const repo = (env.GITHUB_REPO || 'qqwwqq1355-cmd/essa').trim();
+    if (!token) {
+      console.warn('[cron] GITHUB_DISPATCH_TOKEN is not configured in Worker secrets.');
+      return;
+    }
+
+    const res = await fetch(
+      `https://api.github.com/repos/${repo}/actions/workflows/telegram-sync.yml/dispatches`,
+      {
+        method: 'POST',
+        headers: {
+          Authorization: `Bearer ${token}`,
+          Accept: 'application/vnd.github+json',
+          'User-Agent': 'essa-alleth-cloudflare-cron',
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify({
+          ref: 'main',
+          inputs: { mode: 'incremental' },
+        }),
+      }
+    );
+
+    if (!res.ok) {
+      const txt = await res.text().catch(() => '');
+      console.error(`[cron] GitHub dispatch failed (HTTP ${res.status}): ${txt}`);
+    } else {
+      console.log(`[cron] ✓ Triggered telegram-sync.yml (incremental) on ${repo}`);
+    }
+  },
 };

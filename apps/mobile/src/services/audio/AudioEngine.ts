@@ -170,10 +170,15 @@ class WebAudioEngine {
   private updateMediaSessionMetadata(track: Track) {
     if (typeof navigator === 'undefined' || !('mediaSession' in navigator)) return;
     try {
+      const artworkUrl = track.coverUrl || '/app-icon.jpg';
       navigator.mediaSession.metadata = new MediaMetadata({
         title: track.title,
-        artist: 'عيسى الليث',
+        artist: track.poet ? `عيسى الليث • ${track.poet}` : 'عيسى الليث',
         album: track.category || 'مكتبة عيسى الليث',
+        artwork: [
+          { src: artworkUrl, sizes: '192x192', type: 'image/jpeg' },
+          { src: artworkUrl, sizes: '512x512', type: 'image/jpeg' },
+        ],
       });
     } catch {
       // تجاهل

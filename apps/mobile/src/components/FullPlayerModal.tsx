@@ -157,7 +157,7 @@ export const FullPlayerModal: React.FC<FullPlayerModalProps> = ({ theme }) => {
 
         <View style={styles.topCenter}>
           <Text style={[styles.topSource, { color: theme.accent }]}>
-            {track.storageProvider === 'local' ? 'ملف MP3 محلي' : 'مكتبة عيسى الليث'}
+            {track.storageProvider === 'local' ? 'ملف MP3 محلي' : 'زوامل عيسى الليث'}
           </Text>
           <Text style={[styles.topCategory, { color: theme.textSecondary }]}>
             {track.category} • {formatFileSize(track.fileSizeBytes)}
@@ -532,14 +532,6 @@ export const FullPlayerModal: React.FC<FullPlayerModalProps> = ({ theme }) => {
               >
                 <Icon name="copy" size={15} color={theme.textPrimary} />
                 <Text style={[styles.lyricsToolText, { color: theme.textPrimary }]}>نسخ</Text>
-              </Pressable>
-
-              <Pressable
-                onPress={() => openLyricsShare(track.id)}
-                style={[styles.lyricsToolPill, { backgroundColor: theme.accent }]}
-              >
-                <Icon name="sparkles" size={15} color={theme.accentText} />
-                <Text style={[styles.lyricsToolText, { color: theme.accentText }]}>تصميم بطاقة</Text>
               </Pressable>
             </View>
           </View>

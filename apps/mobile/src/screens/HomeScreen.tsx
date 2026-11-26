@@ -162,7 +162,7 @@ export const HomeScreen: React.FC<HomeScreenProps> = React.memo(({ theme }) => {
       {/* الترويسة الرئيسية */}
       <View style={styles.header}>
         <View style={styles.brandCol}>
-          <Text style={[styles.appTitle, { color: theme.textPrimary }]}>مكتبة عيسى الليث</Text>
+          <Text style={[styles.appTitle, { color: theme.textPrimary }]}>زوامل عيسى الليث</Text>
           <View style={styles.syncStatusRow}>
             <View
               style={[

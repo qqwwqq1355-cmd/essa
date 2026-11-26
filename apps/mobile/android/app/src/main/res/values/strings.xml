@@ -1,6 +1,6 @@
 <?xml version="1.0" encoding="utf-8"?>
 <resources>
-    <string name="app_name">مكتبة عيسى الليث</string>
+    <string name="app_name">زوامل عيسى الليث</string>
     <string name="playback_channel_name">تشغيل الصوتيات</string>
     <string name="playback_channel_desc">التحكم باستمرار تشغيل الزوامل في الخلفية</string>
 </resources>

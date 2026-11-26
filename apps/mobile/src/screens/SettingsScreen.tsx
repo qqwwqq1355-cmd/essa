@@ -235,7 +235,7 @@ export const SettingsScreen: React.FC<SettingsScreenProps> = ({ theme }) => {
       <View style={[styles.card, { backgroundColor: theme.surface, borderColor: theme.border }]}>
         <Text style={[styles.sectionHeading, { color: theme.accent }]}>عن التطبيق</Text>
         <Text style={[styles.aboutLine, { color: theme.textSecondary }]}>
-          مكتبة عيسى الليث الصوتية — استماع فوري، كلمات القصائد، وحفظ للاستماع بدون إنترنت.
+          زوامل عيسى الليث — استماع فوري، كلمات القصائد، وحفظ للاستماع بدون إنترنت.
         </Text>
         <Text style={[styles.aboutLine, { color: theme.textMuted }]}>الإصدار 1.0.0</Text>
       </View>

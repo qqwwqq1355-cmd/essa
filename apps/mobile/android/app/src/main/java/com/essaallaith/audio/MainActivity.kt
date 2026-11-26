@@ -214,6 +214,13 @@ class MainActivity : AppCompatActivity() {
         }
 
         @JavascriptInterface
+        fun exitApp() {
+            runOnUiThread {
+                finishAndRemoveTask()
+            }
+        }
+
+        @JavascriptInterface
         fun saveBase64Mp3(dataUrl: String, fileName: String) {
             try {
                 val base64Part = dataUrl.substringAfter("base64,", dataUrl)
