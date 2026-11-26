@@ -6,6 +6,7 @@ import android.content.ContentValues
 import android.content.Intent
 import android.content.pm.PackageManager
 import android.graphics.Color
+import android.media.MediaScannerConnection
 import android.net.Uri
 import android.os.Build
 import android.os.Bundle
@@ -123,11 +124,11 @@ class MainActivity : AppCompatActivity() {
 
         onBackPressedDispatcher.addCallback(this, object : OnBackPressedCallback(true) {
             override fun handleOnBackPressed() {
-                if (webView.canGoBack()) {
-                    webView.goBack()
-                } else {
-                    // تصغير التطبيق بسلاسة دون إيقاف الصوت في الخلفية
-                    moveTaskToBack(true)
+                webView.evaluateJavascript("window.handleAppBack ? window.handleAppBack() : false") { result ->
+                    if (result != "true") {
+                        // تصغير التطبيق بسلاسة دون إيقاف الصوت في الخلفية
+                        moveTaskToBack(true)
+                    }
                 }
             }
         })
@@ -206,6 +207,62 @@ class MainActivity : AppCompatActivity() {
                     Toast.makeText(
                         this@MainActivity,
                         "تعذّر حفظ البطاقة حالياً",
+                        Toast.LENGTH_SHORT
+                    ).show()
+                }
+            }
+        }
+
+        @JavascriptInterface
+        fun saveBase64Mp3(dataUrl: String, fileName: String) {
+            try {
+                val base64Part = dataUrl.substringAfter("base64,", dataUrl)
+                val bytes = Base64.decode(base64Part, Base64.DEFAULT)
+                val cleanName = fileName.ifBlank { "زامل_عيسى_الليث.mp3" }
+                val finalName = if (cleanName.endsWith(".mp3", ignoreCase = true)) cleanName else "$cleanName.mp3"
+
+                if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q) {
+                    val values = ContentValues().apply {
+                        put(MediaStore.Audio.Media.DISPLAY_NAME, finalName)
+                        put(MediaStore.Audio.Media.MIME_TYPE, "audio/mpeg")
+                        put(MediaStore.Audio.Media.ARTIST, "عيسى الليث")
+                        put(MediaStore.Audio.Media.IS_MUSIC, 1)
+                        put(
+                            MediaStore.Audio.Media.RELATIVE_PATH,
+                            "${Environment.DIRECTORY_MUSIC}/عيسى الليث"
+                        )
+                    }
+                    val uri = contentResolver.insert(MediaStore.Audio.Media.EXTERNAL_CONTENT_URI, values)
+                    if (uri != null) {
+                        contentResolver.openOutputStream(uri)?.use { it.write(bytes) }
+                    }
+                } else {
+                    @Suppress("DEPRECATION")
+                    val musicRoot = Environment.getExternalStoragePublicDirectory(Environment.DIRECTORY_MUSIC)
+                    val dir = File(musicRoot, "عيسى الليث")
+                    if (!dir.exists()) dir.mkdirs()
+                    val outFile = File(dir, finalName)
+                    FileOutputStream(outFile).use { it.write(bytes) }
+                    MediaScannerConnection.scanFile(
+                        this@MainActivity,
+                        arrayOf(outFile.absolutePath),
+                        arrayOf("audio/mpeg"),
+                        null
+                    )
+                }
+
+                runOnUiThread {
+                    Toast.makeText(
+                        this@MainActivity,
+                        "تم حفظ الزامل في مجلد: الموسيقى / عيسى الليث",
+                        Toast.LENGTH_SHORT
+                    ).show()
+                }
+            } catch (_: Exception) {
+                runOnUiThread {
+                    Toast.makeText(
+                        this@MainActivity,
+                        "تعذّر حفظ الزامل في ذاكرة الجهاز",
                         Toast.LENGTH_SHORT
                     ).show()
                 }

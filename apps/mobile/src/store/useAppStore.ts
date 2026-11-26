@@ -4,6 +4,11 @@ import { normalizeArabic } from '@shared/arabic/normalize';
 import { getDeterministicPalette } from '@shared/arabic/lyricsParser';
 import type { ThemeMode } from '../theme/tokens';
 import { audioEngine } from '../services/audio/AudioEngine';
+import {
+  clearAllCachedAudio,
+  removeCachedAudio,
+  saveAudioToDevice,
+} from '../services/audio/audioCache';
 import { fetchDeltaSync, getDefaultApiBaseUrl } from '../services/api/syncClient';
 
 export type ActiveTab = 'home' | 'search' | 'library' | 'settings';
@@ -59,7 +64,7 @@ function loadPersisted(): PersistedState {
     if (!raw) return DEFAULT_PERSISTED;
     const parsed = JSON.parse(raw) as Partial<PersistedState>;
     const merged: PersistedState = { ...DEFAULT_PERSISTED, ...parsed };
-    if (!merged.apiBaseUrl) {
+    if (!merged.apiBaseUrl || merged.apiBaseUrl.includes('workers.dev')) {
       merged.apiBaseUrl = getDefaultApiBaseUrl();
     }
     // تنظيف أي معرفات تجريبية قديمة إن وُجدت
@@ -127,6 +132,7 @@ interface AppState extends PersistedState {
   isBuffering: boolean;
   positionSec: number;
   durationSec: number;
+  bufferedSec: number;
   playbackRate: number;
   shuffle: boolean;
   repeatMode: RepeatMode;
@@ -206,12 +212,13 @@ let sleepCheckTimer: ReturnType<typeof setInterval> | null = null;
 
 export const useAppStore = create<AppState>((set, get) => {
   audioEngine.bindCallbacks({
-    onTimeUpdate: (pos, dur) => {
+    onTimeUpdate: (pos, dur, buffered) => {
       const state = get();
       const trackId = state.currentTrackId;
       const updates: Partial<AppState> = {
         positionSec: pos,
         durationSec: dur > 0 ? dur : state.durationSec,
+        bufferedSec: buffered,
       };
       if (trackId && Math.floor(pos) % 5 === 0 && pos > 2) {
         updates.playProgress = { ...state.playProgress, [trackId]: Math.floor(pos) };
@@ -238,6 +245,14 @@ export const useAppStore = create<AppState>((set, get) => {
     },
     onRemotePrevious: () => {
       void get().playPrevious();
+    },
+    onTrackCached: (trackId) => {
+      set((s) => {
+        if (s.downloadedIds.includes(trackId)) return s;
+        const downloadedIds = [trackId, ...s.downloadedIds];
+        persistFromState({ ...s, downloadedIds });
+        return { downloadedIds };
+      });
     },
   });
 
@@ -267,6 +282,7 @@ export const useAppStore = create<AppState>((set, get) => {
     isBuffering: false,
     positionSec: 0,
     durationSec: initialTracks[0]?.durationSec ?? 0,
+    bufferedSec: 0,
     playbackRate: 1,
     shuffle: false,
     repeatMode: 'all',
@@ -342,10 +358,11 @@ export const useAppStore = create<AppState>((set, get) => {
       set({
         currentTrackId: trackId,
         queueIds: ensuredQueue,
-        isPlaying: false,
+        isPlaying: true,
         isBuffering: true,
         positionSec: resumePos,
         durationSec: track.durationSec,
+        bufferedSec: 0,
         isPlayerOpen: openTab ? true : state.isPlayerOpen,
         playerInitialTab: openTab ?? state.playerInitialTab,
       });
@@ -362,16 +379,19 @@ export const useAppStore = create<AppState>((set, get) => {
         return;
       }
 
+      // إذا كان المقطع يعمل أو في حالة تحميل، أوقفه فوراً دون انتظار اكتمال التحميل
+      if (state.isPlaying || state.isBuffering) {
+        audioEngine.pause();
+        set({ isPlaying: false, isBuffering: false });
+        return;
+      }
+
       if (audioEngine.getCurrentTrackId() !== state.currentTrackId) {
         await state.playTrack(state.currentTrackId);
         return;
       }
 
-      if (state.isPlaying) {
-        audioEngine.pause();
-      } else {
-        await audioEngine.play();
-      }
+      await audioEngine.play();
     },
 
     playNext: async () => {
@@ -480,35 +500,39 @@ export const useAppStore = create<AppState>((set, get) => {
 
     downloadTrack: (trackId) => {
       const state = get();
-      if (state.downloadedIds.includes(trackId) || state.downloadingIds[trackId] !== undefined) {
+      if (state.downloadingIds[trackId] !== undefined) {
         return;
       }
-      set((s) => ({ downloadingIds: { ...s.downloadingIds, [trackId]: 15 } }));
+      const track = state.tracks.find((t) => t.id === trackId);
+      if (!track?.streamUrl) {
+        get().showToast('رابط التحميل غير متوفر لهذا المقطع حالياً', 'error');
+        return;
+      }
 
-      let progress = 15;
-      const timer = setInterval(() => {
-        progress += 28;
-        if (progress >= 100) {
-          clearInterval(timer);
-          set((s) => {
-            const nextDownloading = { ...s.downloadingIds };
-            delete nextDownloading[trackId];
-            const downloadedIds = s.downloadedIds.includes(trackId)
-              ? s.downloadedIds
-              : [trackId, ...s.downloadedIds];
-            persistFromState({ ...s, downloadedIds });
-            return { downloadingIds: nextDownloading, downloadedIds };
-          });
-          get().showToast('تم حفظ المقطع للاستماع بدون إنترنت', 'success');
+      set((s) => ({ downloadingIds: { ...s.downloadingIds, [trackId]: 40 } }));
+
+      void saveAudioToDevice(track.streamUrl, track.title).then((ok) => {
+        set((s) => {
+          const nextDownloading = { ...s.downloadingIds };
+          delete nextDownloading[trackId];
+          const downloadedIds = s.downloadedIds.includes(trackId)
+            ? s.downloadedIds
+            : [trackId, ...s.downloadedIds];
+          persistFromState({ ...s, downloadedIds });
+          return { downloadingIds: nextDownloading, downloadedIds };
+        });
+
+        if (ok) {
+          get().showToast('تم حفظ الزامل كملف MP3 في ذاكرة الجهاز (التنزيلات)', 'success');
         } else {
-          set((s) => ({
-            downloadingIds: { ...s.downloadingIds, [trackId]: progress },
-          }));
+          get().showToast('تعذّر حفظ الملف في الجهاز حالياً', 'error');
         }
-      }, 220);
+      });
     },
 
     removeDownload: (trackId) => {
+      const track = get().tracks.find((t) => t.id === trackId);
+      void removeCachedAudio(track?.streamUrl);
       set((s) => {
         const downloadedIds = s.downloadedIds.filter((id) => id !== trackId);
         persistFromState({ ...s, downloadedIds });
@@ -518,6 +542,7 @@ export const useAppStore = create<AppState>((set, get) => {
     },
 
     clearAllDownloads: () => {
+      void clearAllCachedAudio();
       set((s) => {
         persistFromState({ ...s, downloadedIds: [] });
         return { downloadedIds: [] };

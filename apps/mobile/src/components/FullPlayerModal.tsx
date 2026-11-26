@@ -31,6 +31,7 @@ export const FullPlayerModal: React.FC<FullPlayerModalProps> = ({ theme }) => {
     isBuffering,
     positionSec,
     durationSec,
+    bufferedSec,
     playbackRate,
     shuffle,
     repeatMode,
@@ -61,6 +62,8 @@ export const FullPlayerModal: React.FC<FullPlayerModalProps> = ({ theme }) => {
   const [tab, setTab] = useState<'player' | 'lyrics' | 'queue'>(playerInitialTab);
   const [showSleepBar, setShowSleepBar] = useState(false);
   const [nowTick, setNowTick] = useState(Date.now());
+  const [isScrubbing, setIsScrubbing] = useState(false);
+  const [scrubSec, setScrubSec] = useState(0);
 
   useEffect(() => {
     if (isPlayerOpen) {
@@ -79,22 +82,17 @@ export const FullPlayerModal: React.FC<FullPlayerModalProps> = ({ theme }) => {
     [tracks, currentTrackId]
   );
 
-  // توليد أعمدة موجة صوتية ثابتة لكل مقطع (44 عموداً)
-  const waveBars = useMemo(() => {
-    const seed = track?.sourceMessageId ?? 100;
-    return Array.from({ length: 44 }, (_, i) => {
-      const n = Math.sin((i + 1) * 0.58 + seed * 0.13) * 0.5 + 0.5;
-      const m = Math.cos((i + 3) * 0.27 + seed * 0.07) * 0.35 + 0.65;
-      return Math.round(18 + n * m * 82);
-    });
-  }, [track?.sourceMessageId]);
-
   if (!isPlayerOpen || !track) return null;
 
   const isFavorite = favorites.includes(track.id);
   const isDownloaded = downloadedIds.includes(track.id);
   const dlProgress = downloadingIds[track.id];
-  const progressRatio = durationSec > 0 ? Math.min(1, Math.max(0, positionSec / durationSec)) : 0;
+  const safeDuration = durationSec > 0 ? durationSec : track.durationSec || 0;
+  const displayPos = isScrubbing ? scrubSec : positionSec;
+  const progressRatio = safeDuration > 0 ? Math.min(1, Math.max(0, displayPos / safeDuration)) : 0;
+  const bufferedRatio = safeDuration > 0 ? Math.min(1, Math.max(progressRatio, bufferedSec / safeDuration)) : 0;
+  const remainingSec = Math.max(0, safeDuration - displayPos);
+  const showPauseIcon = isPlaying || isBuffering;
   const remainingSleepMin =
     sleepTimerEndsAt && sleepTimerEndsAt > nowTick
       ? Math.ceil((sleepTimerEndsAt - nowTick) / 60000)
@@ -239,39 +237,84 @@ export const FullPlayerModal: React.FC<FullPlayerModalProps> = ({ theme }) => {
             </Pressable>
           </View>
 
-          {/* الموجة الصوتية التفاعلية القابلة للنقر والتقديم */}
-          <View style={styles.waveSection}>
-            <View style={styles.waveRow}>
-              {waveBars.map((heightPct, idx) => {
-                const barRatio = (idx + 1) / waveBars.length;
-                const filled = barRatio <= progressRatio;
-                return (
-                  <Pressable
-                    key={idx}
-                    onPress={() => seekTo((idx / waveBars.length) * (durationSec || track.durationSec))}
-                    style={styles.waveBarHit}
-                    accessibilityLabel={`الانتقال إلى ${Math.round(barRatio * 100)}%`}
-                  >
-                    <View
-                      style={[
-                        styles.waveBar,
-                        {
-                          height: `${heightPct}%`,
-                          backgroundColor: filled ? theme.accent : theme.borderStrong,
-                        },
-                      ]}
-                    />
-                  </Pressable>
-                );
-              })}
+          {/* شريط التشغيل التفاعلي المتطور (قابل للسحب مثل Spotify و YouTube Music) */}
+          <View style={styles.seekSection}>
+            <View style={styles.seekBarWrap}>
+              <View style={[styles.seekTrackBg, { backgroundColor: theme.borderStrong }]}>
+                <View
+                  style={[
+                    styles.seekBufferedFill,
+                    { width: `${bufferedRatio * 100}%`, backgroundColor: theme.textMuted },
+                  ]}
+                />
+                <View
+                  style={[
+                    styles.seekActiveFill,
+                    { width: `${progressRatio * 100}%`, backgroundColor: theme.accent },
+                  ]}
+                />
+              </View>
+              <View
+                style={[
+                  styles.seekThumb,
+                  {
+                    left: `${progressRatio * 100}%`,
+                    backgroundColor: theme.accent,
+                    borderColor: theme.textPrimary,
+                    transform: [{ translateX: -8 }, { scale: isScrubbing ? 1.25 : 1 }],
+                  },
+                ]}
+              />
+              {/* شريط سحب أصلي شفاف فوق الشريط المخصص لاستجابة فورية باللمس والماوس */}
+              <input
+                type="range"
+                dir="ltr"
+                min={0}
+                max={safeDuration || 100}
+                step={0.5}
+                value={Math.min(displayPos, safeDuration || 100)}
+                onChange={(e) => {
+                  const val = Number(e.target.value);
+                  setIsScrubbing(true);
+                  setScrubSec(val);
+                }}
+                onMouseUp={() => {
+                  if (isScrubbing) {
+                    seekTo(scrubSec);
+                    setIsScrubbing(false);
+                  }
+                }}
+                onTouchEnd={() => {
+                  if (isScrubbing) {
+                    seekTo(scrubSec);
+                    setIsScrubbing(false);
+                  }
+                }}
+                onKeyUp={() => {
+                  if (isScrubbing) {
+                    seekTo(scrubSec);
+                    setIsScrubbing(false);
+                  }
+                }}
+                aria-label="شريط التقديم والترجيع"
+                style={{
+                  position: 'absolute',
+                  inset: 0,
+                  width: '100%',
+                  height: '100%',
+                  opacity: 0,
+                  cursor: 'pointer',
+                  margin: 0,
+                }}
+              />
             </View>
 
             <View style={styles.timeRow}>
-              <Text style={[styles.timeText, { color: theme.textSecondary }]}>
-                {formatDuration(positionSec)}
+              <Text style={[styles.timeText, { color: theme.textPrimary }]}>
+                {formatDuration(displayPos)}
               </Text>
               <Text style={[styles.timeText, { color: theme.textMuted }]}>
-                {formatDuration(durationSec || track.durationSec)}
+                -{formatDuration(remainingSec)}
               </Text>
             </View>
           </View>
@@ -304,19 +347,17 @@ export const FullPlayerModal: React.FC<FullPlayerModalProps> = ({ theme }) => {
                   shadowOffset: { width: 0, height: 8 },
                   shadowOpacity: 0.4,
                   shadowRadius: 18,
+                  borderWidth: isBuffering ? 3 : 0,
+                  borderColor: theme.textPrimary,
                 },
               ]}
-              accessibilityLabel={isPlaying ? 'إيقاف مؤقت' : 'تشغيل'}
+              accessibilityLabel={showPauseIcon ? 'إيقاف مؤقت' : 'تشغيل'}
             >
-              {isBuffering ? (
-                <ActivityIndicator size="small" color={theme.accentText} />
-              ) : (
-                <Icon
-                  name={isPlaying ? 'pause' : 'play'}
-                  size={30}
-                  color={theme.accentText}
-                />
-              )}
+              <Icon
+                name={showPauseIcon ? 'pause' : 'play'}
+                size={30}
+                color={theme.accentText}
+              />
             </Pressable>
 
             <Pressable onPress={() => skipBy(10)} style={styles.smallCtrlBtn} accessibilityLabel="تقديم 10 ثوان">
@@ -337,9 +378,12 @@ export const FullPlayerModal: React.FC<FullPlayerModalProps> = ({ theme }) => {
           </View>
 
           {isBuffering && (
-            <Text style={[styles.bufferingHint, { color: theme.accent }]}>
-              جاري تجهيز البث الصوتي...
-            </Text>
+            <View style={styles.bufferingRow}>
+              <ActivityIndicator size="small" color={theme.accent} />
+              <Text style={[styles.bufferingHint, { color: theme.accent }]}>
+                جاري التحميل... يمكنك الإيقاف أو التبديل في أي لحظة
+              </Text>
+            </View>
           )}
 
           {/* شريط الأدوات الاحترافي: السرعة، مؤقت النوم، التحميل أوفلاين، بطاقة الأبيات */}
@@ -359,7 +403,7 @@ export const FullPlayerModal: React.FC<FullPlayerModalProps> = ({ theme }) => {
             </Pressable>
 
             <Pressable
-              onPress={() => (isDownloaded ? removeDownload(track.id) : downloadTrack(track.id))}
+              onPress={() => downloadTrack(track.id)}
               style={styles.utilityBtn}
             >
               <Icon
@@ -368,7 +412,7 @@ export const FullPlayerModal: React.FC<FullPlayerModalProps> = ({ theme }) => {
                 color={isDownloaded ? theme.emerald : theme.textSecondary}
               />
               <Text style={[styles.utilityLabel, { color: isDownloaded ? theme.emerald : theme.textSecondary }]}>
-                {dlProgress !== undefined ? `${dlProgress}%` : isDownloaded ? 'أوفلاين' : 'تحميل'}
+                {dlProgress !== undefined ? 'جاري الحفظ...' : isDownloaded ? 'حفظ MP3' : 'تحميل'}
               </Text>
             </Pressable>
 
@@ -502,24 +546,34 @@ export const FullPlayerModal: React.FC<FullPlayerModalProps> = ({ theme }) => {
             )}
           </ScrollView>
 
-          {/* شريط تحكم مصغر أسفل الكلمات */}
-          <View style={[styles.lyricsFooterPlay, { backgroundColor: theme.surfaceGlass, borderTopColor: theme.border }]}>
-            <Text style={[styles.timeText, { color: theme.textSecondary }]}>
-              {formatDuration(positionSec)} / {formatDuration(durationSec || track.durationSec)}
-            </Text>
-            <View style={styles.rowCenterGap}>
-              <Pressable onPress={() => void playPrevious()} style={styles.smallCtrlBtn}>
-                <Icon name="prev" size={20} color={theme.textPrimary} />
-              </Pressable>
-              <Pressable
-                onPress={() => void togglePlayPause()}
-                style={[styles.miniPlayCircle, { backgroundColor: theme.accent }]}
-              >
-                <Icon name={isPlaying ? 'pause' : 'play'} size={20} color={theme.accentText} />
-              </Pressable>
-              <Pressable onPress={() => void playNext()} style={styles.smallCtrlBtn}>
-                <Icon name="next" size={20} color={theme.textPrimary} />
-              </Pressable>
+          {/* شريط تحكم مصغر أسفل الكلمات مع شريط تقدم */}
+          <View style={[styles.lyricsFooterWrap, { backgroundColor: theme.surfaceGlass, borderTopColor: theme.border }]}>
+            <View style={[styles.lyricsProgressTrack, { backgroundColor: theme.border }]}>
+              <View
+                style={[
+                  styles.lyricsProgressFill,
+                  { width: `${progressRatio * 100}%`, backgroundColor: theme.accent },
+                ]}
+              />
+            </View>
+            <View style={styles.lyricsFooterPlay}>
+              <Text style={[styles.timeText, { color: theme.textSecondary }]}>
+                {formatDuration(displayPos)} / {formatDuration(safeDuration)}
+              </Text>
+              <View style={styles.rowCenterGap}>
+                <Pressable onPress={() => void playPrevious()} style={styles.smallCtrlBtn}>
+                  <Icon name="prev" size={20} color={theme.textPrimary} />
+                </Pressable>
+                <Pressable
+                  onPress={() => void togglePlayPause()}
+                  style={[styles.miniPlayCircle, { backgroundColor: theme.accent }]}
+                >
+                  <Icon name={showPauseIcon ? 'pause' : 'play'} size={20} color={theme.accentText} />
+                </Pressable>
+                <Pressable onPress={() => void playNext()} style={styles.smallCtrlBtn}>
+                  <Icon name="next" size={20} color={theme.textPrimary} />
+                </Pressable>
+              </View>
             </View>
           </View>
         </View>
@@ -679,25 +733,65 @@ const styles = StyleSheet.create({
     justifyContent: 'center',
     alignItems: 'center',
   },
-  waveSection: {
-    gap: 8,
+  seekSection: {
+    gap: 6,
+    paddingTop: 4,
   },
-  waveRow: {
+  seekBarWrap: {
+    height: 30,
+    justifyContent: 'center',
+    position: 'relative',
+  },
+  seekTrackBg: {
+    height: 5,
+    width: '100%',
+    borderRadius: 99,
+    overflow: 'hidden',
+    position: 'relative',
+  },
+  seekBufferedFill: {
+    position: 'absolute',
+    top: 0,
+    left: 0,
+    bottom: 0,
+    opacity: 0.35,
+    borderRadius: 99,
+  },
+  seekActiveFill: {
+    position: 'absolute',
+    top: 0,
+    left: 0,
+    bottom: 0,
+    borderRadius: 99,
+  },
+  seekThumb: {
+    position: 'absolute',
+    top: 7,
+    width: 16,
+    height: 16,
+    borderRadius: 8,
+    borderWidth: 2,
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: 2 },
+    shadowOpacity: 0.35,
+    shadowRadius: 4,
+    pointerEvents: 'none',
+  },
+  bufferingRow: {
     flexDirection: 'row',
     alignItems: 'center',
-    height: 46,
-    gap: 2.5,
-  },
-  waveBarHit: {
-    flex: 1,
-    height: '100%',
     justifyContent: 'center',
-    alignItems: 'center',
+    gap: 8,
   },
-  waveBar: {
-    width: '72%',
-    minWidth: 2.5,
-    borderRadius: 99,
+  lyricsFooterWrap: {
+    borderTopWidth: 1,
+  },
+  lyricsProgressTrack: {
+    height: 3,
+    width: '100%',
+  },
+  lyricsProgressFill: {
+    height: '100%',
   },
   timeRow: {
     flexDirection: 'row',

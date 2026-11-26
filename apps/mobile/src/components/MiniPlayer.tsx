@@ -1,7 +1,8 @@
 import React from 'react';
-import { ActivityIndicator, Pressable, StyleSheet, Text, View } from 'react-native';
+import { Pressable, StyleSheet, Text, View } from 'react-native';
 import type { Track } from '@shared/types/track';
 import { FONTS, RADIUS, type ThemePalette } from '../theme/tokens';
+import { formatDuration } from '../utils/format';
 import { TrackCover } from './TrackCover';
 import { Icon } from './Icon';
 
@@ -12,6 +13,7 @@ interface MiniPlayerProps {
   isBuffering?: boolean;
   positionSec: number;
   durationSec: number;
+  bufferedSec?: number;
   isFavorite: boolean;
   onOpenFull: () => void;
   onOpenLyrics: () => void;
@@ -27,6 +29,7 @@ export const MiniPlayer: React.FC<MiniPlayerProps> = ({
   isBuffering = false,
   positionSec,
   durationSec,
+  bufferedSec = 0,
   isFavorite,
   onOpenFull,
   onOpenLyrics,
@@ -34,7 +37,10 @@ export const MiniPlayer: React.FC<MiniPlayerProps> = ({
   onNext,
   onToggleFavorite,
 }) => {
-  const pct = durationSec > 0 ? Math.min(100, Math.max(0, (positionSec / durationSec) * 100)) : 0;
+  const safeDur = durationSec > 0 ? durationSec : track.durationSec || 0;
+  const pct = safeDur > 0 ? Math.min(100, Math.max(0, (positionSec / safeDur) * 100)) : 0;
+  const bufPct = safeDur > 0 ? Math.min(100, Math.max(pct, (bufferedSec / safeDur) * 100)) : 0;
+  const showPause = isPlaying || isBuffering;
 
   return (
     <View style={styles.outer}>
@@ -50,8 +56,14 @@ export const MiniPlayer: React.FC<MiniPlayerProps> = ({
         accessibilityRole="button"
         accessibilityLabel={`فتح المشغل الكامل لـ ${track.title}`}
       >
-        {/* شريط التقدم الرفيع */}
+        {/* شريط التقدم المزدوج (التحميل المسبق + التشغيل) */}
         <View style={[styles.progressTrack, { backgroundColor: theme.border }]}>
+          <View
+            style={[
+              styles.progressBuffered,
+              { width: `${bufPct}%`, backgroundColor: theme.textMuted },
+            ]}
+          />
           <View
             style={[
               styles.progressFill,
@@ -74,7 +86,9 @@ export const MiniPlayer: React.FC<MiniPlayerProps> = ({
               {track.title}
             </Text>
             <Text style={[styles.subtitle, { color: theme.textSecondary }]} numberOfLines={1}>
-              عيسى الليث • {track.category}
+              {isBuffering
+                ? 'جاري التحميل... اضغط للإيقاف'
+                : `${formatDuration(positionSec)} / ${formatDuration(safeDur)} • عيسى الليث`}
             </Text>
           </View>
 
@@ -112,15 +126,18 @@ export const MiniPlayer: React.FC<MiniPlayerProps> = ({
                 (e as { stopPropagation?: () => void })?.stopPropagation?.();
                 onTogglePlay();
               }}
-              style={[styles.playBtn, { backgroundColor: theme.accent }]}
+              style={[
+                styles.playBtn,
+                {
+                  backgroundColor: theme.accent,
+                  borderWidth: isBuffering ? 2 : 0,
+                  borderColor: theme.textPrimary,
+                },
+              ]}
               hitSlop={6}
-              accessibilityLabel={isPlaying ? 'إيقاف مؤقت' : 'تشغيل'}
+              accessibilityLabel={showPause ? 'إيقاف مؤقت' : 'تشغيل'}
             >
-              {isBuffering ? (
-                <ActivityIndicator size="small" color={theme.accentText} />
-              ) : (
-                <Icon name={isPlaying ? 'pause' : 'play'} size={19} color={theme.accentText} />
-              )}
+              <Icon name={showPause ? 'pause' : 'play'} size={19} color={theme.accentText} />
             </Pressable>
 
             <Pressable
@@ -157,11 +174,22 @@ const styles = StyleSheet.create({
     backdropFilter: 'blur(16px)',
   },
   progressTrack: {
-    height: 2.5,
+    height: 3.5,
     width: '100%',
+    position: 'relative',
+  },
+  progressBuffered: {
+    position: 'absolute',
+    top: 0,
+    left: 0,
+    bottom: 0,
+    opacity: 0.35,
   },
   progressFill: {
-    height: '100%',
+    position: 'absolute',
+    top: 0,
+    left: 0,
+    bottom: 0,
   },
   content: {
     flexDirection: 'row',

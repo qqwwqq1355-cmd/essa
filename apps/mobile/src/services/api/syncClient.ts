@@ -1,6 +1,6 @@
 import type { HealthResponse, SyncResponse } from '@shared/types/track';
 
-const FALLBACK_PRODUCTION_API = 'https://essa-alleth-edge-api.qqwwqq1355.workers.dev';
+const FALLBACK_PRODUCTION_API = 'https://essa-66d.pages.dev';
 const DEFAULT_API_BASE = (import.meta.env.VITE_API_BASE_URL || FALLBACK_PRODUCTION_API)
   .trim()
   .replace(/\/+$/, '');
@@ -38,7 +38,16 @@ export async function fetchDeltaSync(baseUrl: string, sinceIso?: string): Promis
     }
     const data = (await res.json()) as SyncResponse;
     lastMeta = data;
-    allTracks.push(...data.tracks);
+    const rewrittenTracks = data.tracks.map((t) => {
+      if (t.streamUrl && /^https?:\/\/[^/]+\.workers\.dev\//i.test(t.streamUrl)) {
+        return {
+          ...t,
+          streamUrl: t.streamUrl.replace(/^https?:\/\/[^/]+\.workers\.dev/i, clean),
+        };
+      }
+      return t;
+    });
+    allTracks.push(...rewrittenTracks);
 
     if (!data.hasMore || data.tracks.length === 0) break;
     offset += 250;
