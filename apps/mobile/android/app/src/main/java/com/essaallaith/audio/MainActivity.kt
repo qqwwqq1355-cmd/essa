@@ -31,14 +31,17 @@ import androidx.activity.result.contract.ActivityResultContracts
 import androidx.appcompat.app.AppCompatActivity
 import androidx.core.content.ContextCompat
 import androidx.webkit.WebViewAssetLoader
+import com.google.android.gms.ads.AdRequest
+import com.google.android.gms.ads.AdSize
+import com.google.android.gms.ads.AdView
+import com.google.android.gms.ads.FullScreenContentCallback
+import com.google.android.gms.ads.LoadAdError
+import com.google.android.gms.ads.MobileAds
+import com.google.android.gms.ads.interstitial.InterstitialAd
+import com.google.android.gms.ads.interstitial.InterstitialAdLoadCallback
+import com.google.android.gms.ads.rewarded.RewardedAd
+import com.google.android.gms.ads.rewarded.RewardedAdLoadCallback
 import com.google.firebase.messaging.FirebaseMessaging
-import com.unity3d.ads.IUnityAdsInitializationListener
-import com.unity3d.ads.IUnityAdsLoadListener
-import com.unity3d.ads.IUnityAdsShowListener
-import com.unity3d.ads.UnityAds
-import com.unity3d.ads.UnityAdsShowOptions
-import com.unity3d.services.banners.BannerView
-import com.unity3d.services.banners.UnityBannerSize
 import java.io.File
 import java.io.FileOutputStream
 
@@ -46,9 +49,9 @@ class MainActivity : AppCompatActivity() {
 
     private lateinit var webView: WebView
     private var topBannerContainer: FrameLayout? = null
-    private var unityBannerView: BannerView? = null
-    private var isInterstitialLoaded: Boolean = false
-    private var isRewardedLoaded: Boolean = false
+    private var admobBannerView: AdView? = null
+    private var admobInterstitial: InterstitialAd? = null
+    private var admobRewarded: RewardedAd? = null
     private var lastInterstitialShownAt: Long = 0L
     private var fileChooserCallback: ValueCallback<Array<Uri>>? = null
 
@@ -75,8 +78,8 @@ class MainActivity : AppCompatActivity() {
             // تجاهل إذا لم تكن خدمات جوجل متوفرة على الجهاز
         }
 
-        // تهيئة شبكة إعلانات Unity Ads
-        initUnityAds()
+        // تهيئة شبكة إعلانات Google AdMob
+        initAdMob()
 
         // ربط أزرار الإشعار (السابق / تشغيل-إيقاف / التالي) بالتطبيق
         MediaCommandBus.listener = { action ->
@@ -328,38 +331,22 @@ class MainActivity : AppCompatActivity() {
             runOnUiThread {
                 val now = System.currentTimeMillis()
                 if (now - lastInterstitialShownAt < 120_000L) return@runOnUiThread
-                if (!isInterstitialLoaded) {
-                    loadUnityInterstitial()
+                val ad = admobInterstitial
+                if (ad == null) {
+                    loadAdMobInterstitial()
                     return@runOnUiThread
                 }
                 try {
                     lastInterstitialShownAt = now
-                    isInterstitialLoaded = false
-                    UnityAds.show(
-                        this@MainActivity,
-                        UNITY_INTERSTITIAL_ID,
-                        UnityAdsShowOptions(),
-                        object : IUnityAdsShowListener {
-                            override fun onUnityAdsShowFailure(
-                                placementId: String?,
-                                error: UnityAds.UnityAdsShowError?,
-                                message: String?
-                            ) {
-                                loadUnityInterstitial()
-                            }
-
-                            override fun onUnityAdsShowStart(placementId: String?) {}
-                            override fun onUnityAdsShowClick(placementId: String?) {}
-                            override fun onUnityAdsShowComplete(
-                                placementId: String?,
-                                state: UnityAds.UnityAdsShowCompletionState?
-                            ) {
-                                loadUnityInterstitial()
-                            }
+                    admobInterstitial = null
+                    ad.fullScreenContentCallback = object : FullScreenContentCallback() {
+                        override fun onAdDismissedFullScreenContent() {
+                            loadAdMobInterstitial()
                         }
-                    )
+                    }
+                    ad.show(this@MainActivity)
                 } catch (_: Exception) {
-                    loadUnityInterstitial()
+                    loadAdMobInterstitial()
                 }
             }
         }
@@ -376,40 +363,25 @@ class MainActivity : AppCompatActivity() {
                         )
                     }
                 }
-                if (!isRewardedLoaded) {
-                    loadUnityRewarded()
+                val ad = admobRewarded
+                if (ad == null) {
+                    loadAdMobRewarded()
                     deliverReward()
                     return@runOnUiThread
                 }
                 try {
-                    isRewardedLoaded = false
-                    UnityAds.show(
-                        this@MainActivity,
-                        UNITY_REWARDED_ID,
-                        UnityAdsShowOptions(),
-                        object : IUnityAdsShowListener {
-                            override fun onUnityAdsShowFailure(
-                                placementId: String?,
-                                error: UnityAds.UnityAdsShowError?,
-                                message: String?
-                            ) {
-                                loadUnityRewarded()
-                                deliverReward()
-                            }
-
-                            override fun onUnityAdsShowStart(placementId: String?) {}
-                            override fun onUnityAdsShowClick(placementId: String?) {}
-                            override fun onUnityAdsShowComplete(
-                                placementId: String?,
-                                state: UnityAds.UnityAdsShowCompletionState?
-                            ) {
-                                loadUnityRewarded()
-                                deliverReward()
-                            }
+                    admobRewarded = null
+                    ad.fullScreenContentCallback = object : FullScreenContentCallback() {
+                        override fun onAdDismissedFullScreenContent() {
+                            loadAdMobRewarded()
+                            deliverReward()
                         }
-                    )
+                    }
+                    ad.show(this@MainActivity) {
+                        // المستخدم أكمل مشاهدة إعلان المكافأة
+                    }
                 } catch (_: Exception) {
-                    loadUnityRewarded()
+                    loadAdMobRewarded()
                     deliverReward()
                 }
             }
@@ -479,89 +451,79 @@ class MainActivity : AppCompatActivity() {
         }
     }
 
-    private fun initUnityAds() {
-        if (UNITY_GAME_ID.isBlank() || UNITY_GAME_ID == "REPLACE_WITH_YOUR_UNITY_GAME_ID") return
+    private fun initAdMob() {
         try {
-            UnityAds.initialize(
-                this,
-                UNITY_GAME_ID,
-                UNITY_TEST_MODE,
-                object : IUnityAdsInitializationListener {
-                    override fun onInitializationComplete() {
-                        runOnUiThread {
-                            loadUnityBanner()
-                            loadUnityInterstitial()
-                            loadUnityRewarded()
-                        }
-                    }
-
-                    override fun onInitializationFailed(
-                        error: UnityAds.UnityAdsInitializationError?,
-                        message: String?
-                    ) {
-                        // تجاهل
-                    }
+            MobileAds.initialize(this) {
+                runOnUiThread {
+                    loadAdMobBanner()
+                    loadAdMobInterstitial()
+                    loadAdMobRewarded()
                 }
-            )
+            }
         } catch (_: Exception) {
             // تجاهل
         }
     }
 
-    private fun loadUnityBanner() {
+    private fun loadAdMobBanner() {
         val holder = topBannerContainer ?: return
         try {
-            unityBannerView?.destroy()
-            val banner = BannerView(this, UNITY_BANNER_ID, UnityBannerSize(320, 50))
-            unityBannerView = banner
+            admobBannerView?.destroy()
+            val adView = AdView(this).apply {
+                adUnitId = ADMOB_BANNER_ID
+                setAdSize(AdSize.BANNER)
+            }
+            admobBannerView = adView
             holder.removeAllViews()
             val params = FrameLayout.LayoutParams(
                 FrameLayout.LayoutParams.WRAP_CONTENT,
                 FrameLayout.LayoutParams.WRAP_CONTENT,
                 Gravity.CENTER_HORIZONTAL
             )
-            holder.addView(banner, params)
-            banner.load()
+            holder.addView(adView, params)
+            adView.loadAd(AdRequest.Builder().build())
         } catch (_: Exception) {
             // تجاهل
         }
     }
 
-    private fun loadUnityInterstitial() {
+    private fun loadAdMobInterstitial() {
         try {
-            UnityAds.load(UNITY_INTERSTITIAL_ID, object : IUnityAdsLoadListener {
-                override fun onUnityAdsAdLoaded(placementId: String?) {
-                    isInterstitialLoaded = true
-                }
+            InterstitialAd.load(
+                this,
+                ADMOB_INTERSTITIAL_ID,
+                AdRequest.Builder().build(),
+                object : InterstitialAdLoadCallback() {
+                    override fun onAdLoaded(ad: InterstitialAd) {
+                        admobInterstitial = ad
+                    }
 
-                override fun onUnityAdsFailedToLoad(
-                    placementId: String?,
-                    error: UnityAds.UnityAdsLoadError?,
-                    message: String?
-                ) {
-                    isInterstitialLoaded = false
+                    override fun onAdFailedToLoad(error: LoadAdError) {
+                        admobInterstitial = null
+                    }
                 }
-            })
+            )
         } catch (_: Exception) {
             // تجاهل
         }
     }
 
-    private fun loadUnityRewarded() {
+    private fun loadAdMobRewarded() {
         try {
-            UnityAds.load(UNITY_REWARDED_ID, object : IUnityAdsLoadListener {
-                override fun onUnityAdsAdLoaded(placementId: String?) {
-                    isRewardedLoaded = true
-                }
+            RewardedAd.load(
+                this,
+                ADMOB_REWARDED_ID,
+                AdRequest.Builder().build(),
+                object : RewardedAdLoadCallback() {
+                    override fun onAdLoaded(ad: RewardedAd) {
+                        admobRewarded = ad
+                    }
 
-                override fun onUnityAdsFailedToLoad(
-                    placementId: String?,
-                    error: UnityAds.UnityAdsLoadError?,
-                    message: String?
-                ) {
-                    isRewardedLoaded = false
+                    override fun onAdFailedToLoad(error: LoadAdError) {
+                        admobRewarded = null
+                    }
                 }
-            })
+            )
         } catch (_: Exception) {
             // تجاهل
         }
@@ -569,11 +531,9 @@ class MainActivity : AppCompatActivity() {
 
     companion object {
         private const val ASSET_HOST = "appassets.androidplatform.net"
-        private const val UNITY_GAME_ID = "800458205"
-        private const val UNITY_TEST_MODE = false
-        private const val UNITY_BANNER_ID = "Banner_Android"
-        private const val UNITY_INTERSTITIAL_ID = "Interstitial_Android"
-        private const val UNITY_REWARDED_ID = "Rewarded_Android"
+        private const val ADMOB_BANNER_ID = "ca-app-pub-8298073076766088/5200835609"
+        private const val ADMOB_INTERSTITIAL_ID = "ca-app-pub-8298073076766088/6322345586"
+        private const val ADMOB_REWARDED_ID = "ca-app-pub-8298073076766088/9631035208"
     }
 }
 

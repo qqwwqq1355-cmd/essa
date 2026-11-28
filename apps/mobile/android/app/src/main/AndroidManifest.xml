@@ -53,6 +53,10 @@
             android:name="com.google.firebase.messaging.default_notification_icon"
             android:resource="@drawable/ic_app_icon" />
 
+        <meta-data
+            android:name="com.google.android.gms.ads.APPLICATION_ID"
+            android:value="ca-app-pub-8298073076766088~5376095426" />
+
     </application>
 </manifest>
 

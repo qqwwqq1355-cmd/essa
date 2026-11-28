@@ -97,5 +97,5 @@ dependencies {
     implementation("androidx.media:media:1.7.0")
     implementation(platform("com.google.firebase:firebase-bom:33.7.0"))
     implementation("com.google.firebase:firebase-messaging-ktx")
-    implementation("com.unity3d.ads:unity-ads:4.12.2")
+    implementation("com.google.android.gms:play-services-ads:23.6.0")
 }
