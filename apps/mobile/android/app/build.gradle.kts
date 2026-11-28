@@ -3,6 +3,7 @@ import java.util.Properties
 plugins {
     id("com.android.application")
     id("org.jetbrains.kotlin.android")
+    id("com.google.gms.google-services")
 }
 
 val keystorePropsFile = rootProject.file("keystore/keystore.properties")
@@ -30,7 +31,7 @@ android {
     compileSdk = 35
 
     defaultConfig {
-        applicationId = "com.essaallaith.audio"
+        applicationId = "com.essaalleth.app"
         minSdk = 24
         targetSdk = 35
         versionCode = 2
@@ -94,4 +95,6 @@ dependencies {
     implementation("androidx.appcompat:appcompat:1.7.0")
     implementation("androidx.webkit:webkit:1.12.1")
     implementation("androidx.media:media:1.7.0")
+    implementation(platform("com.google.firebase:firebase-bom:33.7.0"))
+    implementation("com.google.firebase:firebase-messaging-ktx")
 }

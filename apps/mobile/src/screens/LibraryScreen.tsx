@@ -10,7 +10,7 @@ interface LibraryScreenProps {
   theme: ThemePalette;
 }
 
-type LibrarySegment = 'all' | 'favorites' | 'offline' | 'playlists';
+type LibrarySegment = 'favorites' | 'playlists' | 'history' | 'all';
 type SortMode = 'newest' | 'popular' | 'alpha';
 
 export const LibraryScreen: React.FC<LibraryScreenProps> = ({ theme }) => {
@@ -22,30 +22,34 @@ export const LibraryScreen: React.FC<LibraryScreenProps> = ({ theme }) => {
     downloadedIds,
     downloadingIds,
     playlists,
-    cacheLimitMb,
+    playHistory,
     playTrack,
     toggleFavorite,
     downloadTrack,
     removeDownload,
-    clearAllDownloads,
+    clearPlayHistory,
     createPlaylist,
     deletePlaylist,
     openPlaylistPicker,
     importLocalAudioFile,
   } = useAppStore();
 
-  const [segment, setSegment] = useState<LibrarySegment>('all');
+  const [segment, setSegment] = useState<LibrarySegment>('favorites');
   const [sortMode, setSortMode] = useState<SortMode>('newest');
   const [newPlaylistName, setNewPlaylistName] = useState('');
   const [expandedPlaylistId, setExpandedPlaylistId] = useState<string | null>(null);
   const fileInputRef = useRef<HTMLInputElement | null>(null);
 
   const displayedTracks = useMemo(() => {
+    if (segment === 'history') {
+      return playHistory
+        .map((id) => tracks.find((t) => t.id === id))
+        .filter((t): t is NonNullable<typeof t> => Boolean(t));
+    }
+
     let base = tracks;
     if (segment === 'favorites') {
       base = tracks.filter((t) => favorites.includes(t.id));
-    } else if (segment === 'offline') {
-      base = tracks.filter((t) => downloadedIds.includes(t.id));
     }
 
     const sorted = [...base];
@@ -57,15 +61,7 @@ export const LibraryScreen: React.FC<LibraryScreenProps> = ({ theme }) => {
       sorted.sort((a, b) => b.publishedAt.localeCompare(a.publishedAt));
     }
     return sorted;
-  }, [tracks, segment, favorites, downloadedIds, sortMode]);
-
-  const offlineBytes = useMemo(() => {
-    return tracks
-      .filter((t) => downloadedIds.includes(t.id))
-      .reduce((acc, t) => acc + (t.fileSizeBytes || 0), 0);
-  }, [tracks, downloadedIds]);
-
-  const offlineUsedPct = Math.min(100, Math.round((offlineBytes / (cacheLimitMb * 1024 * 1024)) * 100));
+  }, [tracks, segment, favorites, playHistory, sortMode]);
 
   const cycleSort = () => {
     const order: SortMode[] = ['newest', 'popular', 'alpha'];
@@ -107,7 +103,7 @@ export const LibraryScreen: React.FC<LibraryScreenProps> = ({ theme }) => {
             <Text style={[styles.pillBtnText, { color: theme.accent }]}>استيراد MP3</Text>
           </Pressable>
 
-          {segment !== 'playlists' && (
+          {segment !== 'playlists' && segment !== 'history' && (
             <Pressable
               onPress={cycleSort}
               style={[styles.pillBtn, { backgroundColor: theme.surface, borderColor: theme.border, borderWidth: 1 }]}
@@ -125,10 +121,10 @@ export const LibraryScreen: React.FC<LibraryScreenProps> = ({ theme }) => {
         <View style={[styles.segmentBar, { backgroundColor: theme.surface, borderColor: theme.border }]}>
           {(
             [
-              { id: 'all', label: `الكل (${tracks.length})` },
               { id: 'favorites', label: `المفضلة (${favorites.length})` },
-              { id: 'offline', label: `أوفلاين (${downloadedIds.length})` },
               { id: 'playlists', label: `قوائم (${playlists.length})` },
+              { id: 'history', label: `السجل (${playHistory.length})` },
+              { id: 'all', label: `الكل (${tracks.length})` },
             ] as const
           ).map((item) => {
             const active = segment === item.id;
@@ -158,33 +154,25 @@ export const LibraryScreen: React.FC<LibraryScreenProps> = ({ theme }) => {
         contentContainerStyle={styles.scrollBody}
         showsVerticalScrollIndicator={false}
       >
-        {/* بطاقة مساحة التخزين الأوفلاين */}
-        {segment === 'offline' && (
+        {/* بطاقة سجل الاستماع / استكمل الاستماع */}
+        {segment === 'history' && (
           <View style={[styles.storageCard, { backgroundColor: theme.surface, borderColor: theme.border }]}>
             <View style={styles.storageTop}>
               <View style={styles.rowGap}>
-                <Icon name="wifi-off" size={17} color={theme.emerald} />
+                <Icon name="clock" size={17} color={theme.accent} />
                 <Text style={[styles.storageTitle, { color: theme.textPrimary }]}>
-                  التخزين المحلي (أوفلاين)
+                  سجل الاستماع — استكمل من حيث توقفت
                 </Text>
               </View>
-              {downloadedIds.length > 0 && (
-                <Pressable onPress={clearAllDownloads}>
-                  <Text style={[styles.clearText, { color: theme.danger }]}>تفريغ الكل</Text>
+              {playHistory.length > 0 && (
+                <Pressable onPress={clearPlayHistory}>
+                  <Text style={[styles.clearText, { color: theme.danger }]}>مسح السجل</Text>
                 </Pressable>
               )}
             </View>
             <Text style={[styles.storageSub, { color: theme.textSecondary }]}>
-              {formatFileSize(offlineBytes)} مستخدمة من أصل {cacheLimitMb} MB ({downloadedIds.length} ملف محفوظ)
+              يعرض آخر {displayedTracks.length} زامل استمعت إليها مؤخراً للعودة إليها بسرعة.
             </Text>
-            <View style={[styles.barBg, { backgroundColor: theme.border }]}>
-              <View
-                style={[
-                  styles.barFill,
-                  { width: `${Math.max(4, offlineUsedPct)}%`, backgroundColor: theme.emerald },
-                ]}
-              />
-            </View>
           </View>
         )}
 
@@ -324,9 +312,17 @@ export const LibraryScreen: React.FC<LibraryScreenProps> = ({ theme }) => {
           ))
         ) : (
           <View style={[styles.emptyBox, { backgroundColor: theme.surface, borderColor: theme.border }]}>
-            <Icon name={segment === 'favorites' ? 'heart-outline' : 'download'} size={34} color={theme.textMuted} />
+            <Icon
+              name={segment === 'favorites' ? 'heart-outline' : segment === 'history' ? 'clock' : 'music'}
+              size={34}
+              color={theme.textMuted}
+            />
             <Text style={[styles.emptyTitle, { color: theme.textPrimary }]}>
-              {segment === 'favorites' ? 'لا توجد مقاطع في المفضلة بعد' : 'لا توجد مقاطع محمّلة أوفلاين'}
+              {segment === 'favorites'
+                ? 'لا توجد مقاطع في المفضلة بعد'
+                : segment === 'history'
+                  ? 'سجل الاستماع فارغ حالياً'
+                  : 'لا توجد مقاطع متاحة بعد'}
             </Text>
             <Text style={[styles.emptySub, { color: theme.textSecondary }]}>
               {segment === 'favorites'

@@ -57,6 +57,9 @@ export const FullPlayerModal: React.FC<FullPlayerModalProps> = ({ theme }) => {
     setLyricsFontSize,
     openLyricsShare,
     openPlaylistPicker,
+    playbackError,
+    retryCurrentTrack,
+    clearPlaybackError,
     showToast,
   } = useAppStore();
 
@@ -108,6 +111,37 @@ export const FullPlayerModal: React.FC<FullPlayerModalProps> = ({ theme }) => {
       showToast('تم نسخ الكلمات إلى الحافظة', 'success');
     } catch {
       showToast('تعذّر النسخ التلقائي — يمكنك التحديد والنسخ يدوياً', 'info');
+    }
+  };
+
+  const handleShareTrack = async () => {
+    const shareText = [
+      `🎵 ${track.title}`,
+      track.poet ? `✍️ كلمات الشاعر: ${track.poet}` : null,
+      '🎙️ أداء: عيسى الليث',
+      track.streamUrl && !track.streamUrl.startsWith('blob:') ? `🔗 ${track.streamUrl}` : null,
+      'عبر تطبيق زوامل عيسى الليث',
+    ]
+      .filter(Boolean)
+      .join('\n');
+
+    try {
+      if (typeof navigator !== 'undefined' && typeof navigator.share === 'function') {
+        await navigator.share({
+          title: track.title,
+          text: shareText,
+        });
+        return;
+      }
+      await navigator.clipboard.writeText(shareText);
+      showToast('تم نسخ تفاصيل ورابط الزامل للمشاركة', 'success');
+    } catch {
+      try {
+        await navigator.clipboard.writeText(shareText);
+        showToast('تم نسخ تفاصيل ورابط الزامل للمشاركة', 'success');
+      } catch {
+        showToast('تعذّرت المشاركة حالياً', 'error');
+      }
     }
   };
 
@@ -399,7 +433,42 @@ export const FullPlayerModal: React.FC<FullPlayerModalProps> = ({ theme }) => {
             </View>
           )}
 
-          {/* شريط الأدوات الاحترافي: السرعة، مؤقت النوم، التحميل أوفلاين، بطاقة الأبيات */}
+          {playbackError && (
+            <View
+              style={[
+                styles.sleepPicker,
+                {
+                  backgroundColor: theme.surface,
+                  borderColor: theme.danger,
+                  flexDirection: 'row',
+                  alignItems: 'center',
+                  justifyContent: 'space-between',
+                },
+              ]}
+            >
+              <Text style={[styles.sleepTitle, { color: theme.danger, flex: 1 }]}>
+                {playbackError.message}
+              </Text>
+              <Pressable
+                onPress={() => {
+                  clearPlaybackError();
+                  void retryCurrentTrack();
+                }}
+                style={{
+                  backgroundColor: theme.accent,
+                  paddingHorizontal: 10,
+                  paddingVertical: 6,
+                  borderRadius: RADIUS.sm,
+                }}
+              >
+                <Text style={{ color: theme.accentText, fontFamily: FONTS.ui, fontSize: 11.5, fontWeight: '700' }}>
+                  إعادة المحاولة
+                </Text>
+              </Pressable>
+            </View>
+          )}
+
+          {/* شريط الأدوات الاحترافي: السرعة، مؤقت النوم، التحميل أوفلاين، مشاركة الزامل، بطاقة الأبيات */}
           <View style={[styles.utilityBar, { backgroundColor: theme.surface, borderColor: theme.border }]}>
             <Pressable onPress={cyclePlaybackRate} style={styles.utilityBtn}>
               <Icon name="speed" size={18} color={playbackRate !== 1 ? theme.accent : theme.textSecondary} />
@@ -430,11 +499,19 @@ export const FullPlayerModal: React.FC<FullPlayerModalProps> = ({ theme }) => {
             </Pressable>
 
             <Pressable
+              onPress={() => void handleShareTrack()}
+              style={styles.utilityBtn}
+            >
+              <Icon name="share" size={18} color={theme.textSecondary} />
+              <Text style={[styles.utilityLabel, { color: theme.textSecondary }]}>مشاركة</Text>
+            </Pressable>
+
+            <Pressable
               onPress={() => openLyricsShare(track.id)}
               style={styles.utilityBtn}
             >
               <Icon name="sparkles" size={18} color={theme.accent} />
-              <Text style={[styles.utilityLabel, { color: theme.accent }]}>بطاقة أبيات</Text>
+              <Text style={[styles.utilityLabel, { color: theme.accent }]}>بطاقة</Text>
             </Pressable>
           </View>
 

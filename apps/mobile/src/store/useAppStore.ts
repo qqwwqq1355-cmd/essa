@@ -13,7 +13,7 @@ import {
 import { pauseImageLoading } from '../services/images/imageLoader';
 import { fetchDeltaSync, getDefaultApiBaseUrl } from '../services/api/syncClient';
 
-export type ActiveTab = 'home' | 'search' | 'library' | 'settings';
+export type ActiveTab = 'home' | 'search' | 'offline' | 'library' | 'settings';
 export type RepeatMode = 'off' | 'all' | 'one';
 
 export interface UserPlaylist {
@@ -34,6 +34,7 @@ export interface PersistedState {
   downloadedIds: string[];
   playlists: UserPlaylist[];
   playProgress: Record<string, number>;
+  playHistory: string[];
   recentSearches: string[];
   lastSyncAt: string | null;
 }
@@ -52,6 +53,7 @@ const DEFAULT_PERSISTED: PersistedState = {
   downloadedIds: [],
   playlists: [],
   playProgress: {},
+  playHistory: [],
   recentSearches: [],
   lastSyncAt: null,
 };
@@ -76,6 +78,7 @@ function loadPersisted(): PersistedState {
     // تنظيف أي معرفات تجريبية قديمة إن وُجدت
     merged.favorites = (merged.favorites || []).filter(isNotPreviewId);
     merged.downloadedIds = (merged.downloadedIds || []).filter(isNotPreviewId);
+    merged.playHistory = (merged.playHistory || []).filter(isNotPreviewId);
     merged.playlists = (merged.playlists || []).map((p) => ({
       ...p,
       trackIds: (p.trackIds || []).filter(isNotPreviewId),
@@ -197,6 +200,7 @@ interface AppState extends PersistedState {
   lyricsShareTrackId: string | null;
   playlistPickerTrackId: string | null;
   downloadingIds: Record<string, number>;
+  playbackError: { trackId: string; message: string } | null;
   toast: ToastMessage | null;
 
   setActiveTab: (tab: ActiveTab) => void;
@@ -230,6 +234,9 @@ interface AppState extends PersistedState {
   toggleTrackInPlaylist: (playlistId: string, trackId: string) => void;
   addRecentSearch: (query: string) => void;
   clearRecentSearches: () => void;
+  clearPlayHistory: () => void;
+  clearPlaybackError: () => void;
+  retryCurrentTrack: () => Promise<void>;
 
   openLyricsShare: (trackId: string) => void;
   closeLyricsShare: () => void;
@@ -256,6 +263,7 @@ function persistFromState(s: AppState) {
     downloadedIds: s.downloadedIds,
     playlists: s.playlists,
     playProgress: s.playProgress,
+    playHistory: s.playHistory,
     recentSearches: s.recentSearches,
     lastSyncAt: s.lastSyncAt,
   });
@@ -292,7 +300,19 @@ export const useAppStore = create<AppState>((set, get) => {
       void state.playNext();
     },
     onError: (msg) => {
-      get().showToast(msg, 'error');
+      const state = get();
+      const isOffline = typeof navigator !== 'undefined' && !navigator.onLine;
+      const friendlyMsg = isOffline
+        ? 'لا يوجد اتصال بالإنترنت — هذا الزامل غير محمّل محلياً'
+        : msg || 'تعذّر تشغيل الزامل حالياً — تحقق من الاتصال وأعد المحاولة';
+      set({
+        isPlaying: false,
+        isBuffering: false,
+        playbackError: state.currentTrackId
+          ? { trackId: state.currentTrackId, message: friendlyMsg }
+          : null,
+      });
+      state.showToast(friendlyMsg, 'error');
     },
     onRemoteNext: () => {
       void get().playNext();
@@ -347,6 +367,7 @@ export const useAppStore = create<AppState>((set, get) => {
     lyricsShareTrackId: null,
     playlistPickerTrackId: null,
     downloadingIds: {},
+    playbackError: null,
     toast: null,
 
     setActiveTab: (activeTab) => set({ activeTab }),
@@ -412,10 +433,13 @@ export const useAppStore = create<AppState>((set, get) => {
       const ensuredQueue = queueIds.includes(trackId) ? queueIds : [trackId, ...queueIds];
       const savedPos = state.playProgress[trackId] ?? 0;
       const resumePos = savedPos > 3 && savedPos < track.durationSec - 4 ? savedPos : 0;
+      const playHistory = [trackId, ...state.playHistory.filter((id) => id !== trackId)].slice(0, 50);
 
       set({
         currentTrackId: trackId,
         queueIds: ensuredQueue,
+        playHistory,
+        playbackError: null,
         isPlaying: true,
         isBuffering: true,
         positionSec: resumePos,
@@ -424,6 +448,7 @@ export const useAppStore = create<AppState>((set, get) => {
         isPlayerOpen: openTab ? true : state.isPlayerOpen,
         playerInitialTab: openTab ?? state.playerInitialTab,
       });
+      persistFromState({ ...get(), playHistory });
 
       await audioEngine.loadAndPlay(
         track,
@@ -611,6 +636,24 @@ export const useAppStore = create<AppState>((set, get) => {
         return { downloadedIds: [] };
       });
       get().showToast('تم تفريغ جميع الملفات المحفوظة أوفلاين', 'info');
+    },
+
+    clearPlayHistory: () => {
+      set((s) => {
+        persistFromState({ ...s, playHistory: [] });
+        return { playHistory: [] };
+      });
+      get().showToast('تم مسح سجل الاستماع', 'info');
+    },
+
+    clearPlaybackError: () => set({ playbackError: null }),
+
+    retryCurrentTrack: async () => {
+      const state = get();
+      const targetId = state.playbackError?.trackId || state.currentTrackId;
+      if (!targetId) return;
+      set({ playbackError: null });
+      await state.playTrack(targetId);
     },
 
     createPlaylist: (name, initialTrackId) => {

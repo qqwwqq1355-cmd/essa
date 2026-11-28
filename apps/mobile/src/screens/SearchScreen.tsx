@@ -1,5 +1,6 @@
-import React, { useMemo, useState } from 'react';
+import React, { useEffect, useMemo, useState } from 'react';
 import { Pressable, ScrollView, StyleSheet, Text, TextInput, View } from 'react-native';
+import { useShallow } from 'zustand/react/shallow';
 import {
   extractMatchingSnippet,
   normalizeArabic,
@@ -16,7 +17,7 @@ interface SearchScreenProps {
 
 const SUGGESTIONS = ['اليمن', 'المندب', 'الجوف', 'الهداية', 'الثبات', 'الوعد', 'الصف'];
 
-export const SearchScreen: React.FC<SearchScreenProps> = ({ theme }) => {
+export const SearchScreen: React.FC<SearchScreenProps> = React.memo(({ theme }) => {
   const {
     tracks,
     currentTrackId,
@@ -32,13 +33,46 @@ export const SearchScreen: React.FC<SearchScreenProps> = ({ theme }) => {
     downloadTrack,
     removeDownload,
     openPlaylistPicker,
-  } = useAppStore();
+  } = useAppStore(
+    useShallow((s) => ({
+      tracks: s.tracks,
+      currentTrackId: s.currentTrackId,
+      isPlaying: s.isPlaying,
+      favorites: s.favorites,
+      downloadedIds: s.downloadedIds,
+      downloadingIds: s.downloadingIds,
+      recentSearches: s.recentSearches,
+      addRecentSearch: s.addRecentSearch,
+      clearRecentSearches: s.clearRecentSearches,
+      playTrack: s.playTrack,
+      toggleFavorite: s.toggleFavorite,
+      downloadTrack: s.downloadTrack,
+      removeDownload: s.removeDownload,
+      openPlaylistPicker: s.openPlaylistPicker,
+    }))
+  );
 
   const [query, setQuery] = useState('');
+  const [debouncedQuery, setDebouncedQuery] = useState('');
+  const [visibleLimit, setVisibleLimit] = useState(30);
+
+  useEffect(() => {
+    const trimmed = query.trim();
+    if (!trimmed) {
+      setDebouncedQuery('');
+      setVisibleLimit(30);
+      return;
+    }
+    const timer = setTimeout(() => {
+      setDebouncedQuery(trimmed);
+      setVisibleLimit(30);
+    }, 180);
+    return () => clearTimeout(timer);
+  }, [query]);
 
   // محرك البحث العربي الفوري (Offline Instant Search مع التطبيع وتجاهل التشكيل والهمزات)
   const searchResults = useMemo(() => {
-    const tokens = tokenizeArabicQuery(query);
+    const tokens = tokenizeArabicQuery(debouncedQuery);
     if (tokens.length === 0) return [];
 
     return tracks
@@ -73,12 +107,17 @@ export const SearchScreen: React.FC<SearchScreenProps> = ({ theme }) => {
 
         if (!matchedAll || score === 0) return null;
 
-        const snippet = extractMatchingSnippet(track.lyrics, query, 1);
+        const snippet = extractMatchingSnippet(track.lyrics, debouncedQuery, 1);
         return { track, score, snippet };
       })
       .filter((item): item is NonNullable<typeof item> => item !== null)
       .sort((a, b) => b.score - a.score);
-  }, [tracks, query]);
+  }, [tracks, debouncedQuery]);
+
+  const visibleResults = useMemo(
+    () => searchResults.slice(0, visibleLimit),
+    [searchResults, visibleLimit]
+  );
 
   const popularTracks = useMemo(
     () => [...tracks].sort((a, b) => (b.playCount || 0) - (a.playCount || 0)).slice(0, 4),
@@ -139,35 +178,56 @@ export const SearchScreen: React.FC<SearchScreenProps> = ({ theme }) => {
               نتائج البحث ({searchResults.length})
             </Text>
 
-            {searchResults.length > 0 ? (
-              searchResults.map(({ track, snippet }) => (
-                <TrackRow
-                  key={track.id}
-                  track={track}
-                  theme={theme}
-                  snippet={snippet}
-                  isCurrent={currentTrackId === track.id}
-                  isPlaying={currentTrackId === track.id && isPlaying}
-                  isFavorite={favorites.includes(track.id)}
-                  isDownloaded={downloadedIds.includes(track.id)}
-                  downloadProgress={downloadingIds[track.id]}
-                  onPress={() => {
-                    addRecentSearch(query);
-                    void playTrack(track.id, resultIds);
-                  }}
-                  onLyricsPress={() => {
-                    addRecentSearch(query);
-                    void playTrack(track.id, resultIds, 'lyrics');
-                  }}
-                  onToggleFavorite={() => toggleFavorite(track.id)}
-                  onDownloadPress={() =>
-                    downloadedIds.includes(track.id)
-                      ? removeDownload(track.id)
-                      : downloadTrack(track.id)
-                  }
-                  onPlaylistPress={() => openPlaylistPicker(track.id)}
-                />
-              ))
+            {visibleResults.length > 0 ? (
+              <>
+                {visibleResults.map(({ track, snippet }) => (
+                  <TrackRow
+                    key={track.id}
+                    track={track}
+                    theme={theme}
+                    snippet={snippet}
+                    isCurrent={currentTrackId === track.id}
+                    isPlaying={currentTrackId === track.id && isPlaying}
+                    isFavorite={favorites.includes(track.id)}
+                    isDownloaded={downloadedIds.includes(track.id)}
+                    downloadProgress={downloadingIds[track.id]}
+                    onPress={() => {
+                      addRecentSearch(query);
+                      void playTrack(track.id, resultIds);
+                    }}
+                    onLyricsPress={() => {
+                      addRecentSearch(query);
+                      void playTrack(track.id, resultIds, 'lyrics');
+                    }}
+                    onToggleFavorite={() => toggleFavorite(track.id)}
+                    onDownloadPress={() =>
+                      downloadedIds.includes(track.id)
+                        ? removeDownload(track.id)
+                        : downloadTrack(track.id)
+                    }
+                    onPlaylistPress={() => openPlaylistPicker(track.id)}
+                  />
+                ))}
+                {searchResults.length > visibleLimit && (
+                  <Pressable
+                    onPress={() => setVisibleLimit((n) => n + 30)}
+                    style={{
+                      alignSelf: 'center',
+                      paddingHorizontal: 18,
+                      paddingVertical: 9,
+                      borderRadius: RADIUS.full,
+                      backgroundColor: theme.surface,
+                      borderColor: theme.border,
+                      borderWidth: 1,
+                      marginTop: 4,
+                    }}
+                  >
+                    <Text style={{ fontFamily: FONTS.ui, fontSize: 12.5, fontWeight: '700', color: theme.accent }}>
+                      عرض المزيد ({searchResults.length - visibleLimit} نتيجة متبقية)
+                    </Text>
+                  </Pressable>
+                )}
+              </>
             ) : (
               <View style={[styles.emptyCard, { backgroundColor: theme.surface, borderColor: theme.border }]}>
                 <Icon name="search" size={32} color={theme.textMuted} />
@@ -254,7 +314,7 @@ export const SearchScreen: React.FC<SearchScreenProps> = ({ theme }) => {
       </ScrollView>
     </View>
   );
-};
+});
 
 const styles = StyleSheet.create({
   root: {

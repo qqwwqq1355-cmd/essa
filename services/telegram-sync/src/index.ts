@@ -6,6 +6,7 @@ import { CloudflareD1SyncClient } from './dbSync';
 import { mirrorAudioToPrivateChannel } from './storage/telegramMirror';
 import { GitHubReleaseAudioStore } from './storage/githubRelease';
 import { R2WorkerAudioStore } from './storage/r2WorkerUploader';
+import { sendNewTrackNotification } from './notifier';
 import { normalizeArabic } from '../../../packages/shared/src/arabic/normalize';
 import { parseTelegramAudioPost } from '../../../packages/shared/src/arabic/lyricsParser';
 
@@ -348,6 +349,17 @@ async function processBatch(
     console.log(
       `[telegram-sync] ✓ [#${state.syncedCount}] msg #${msg.id} — "${parsed.title}" (${parsed.lyricsRaw ? 'مع كلمات' : 'MP3'} | ${tag})`
     );
+
+    // إرسال إشعار فوري للمستخدمين عند نشر زامل جديد في الوضع الدوري (incremental) فقط
+    if (config.syncMode === 'incremental') {
+      await sendNewTrackNotification({
+        trackId: `tg_${msg.id}`,
+        title: parsed.title,
+        poet: parsed.poet,
+        coverUrl,
+        edgeApiUrl: process.env.EDGE_API_URL,
+      });
+    }
 
     await sleep(config.storageMode === 'telegram' ? 900 : 300);
   }

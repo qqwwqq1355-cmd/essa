@@ -1,4 +1,4 @@
-import React from 'react';
+import React, { useState } from 'react';
 import { Pressable, ScrollView, StyleSheet, Text, View } from 'react-native';
 import { FONTS, RADIUS, type ThemePalette } from '../theme/tokens';
 import { useAppStore } from '../store/useAppStore';
@@ -27,14 +27,51 @@ export const SettingsScreen: React.FC<SettingsScreenProps> = ({ theme }) => {
     setCacheLimitMb,
     syncWithTelegramApi,
     clearAllDownloads,
+    showToast,
   } = useAppStore();
 
+  const [showPrivacyModal, setShowPrivacyModal] = useState(false);
+  const [showSupportModal, setShowSupportModal] = useState(false);
+
+  const handleOpenWhatsAppSupport = () => {
+    const message = 'مرحبا\nلدي استفسار حول تطبيق زوامل عيسى الليث';
+    const url = `https://wa.me/967777310606?text=${encodeURIComponent(message)}`;
+    try {
+      const opened = window.open(url, '_blank', 'noopener,noreferrer');
+      if (!opened) {
+        window.location.href = url;
+      }
+    } catch {
+      window.location.href = url;
+    }
+  };
+
+  const handleShareApp = async () => {
+    const text =
+      'تطبيق زوامل عيسى الليث — استماع فوري، كلمات القصائد، وحفظ للاستماع بدون إنترنت.\nتطوير م/ هاشم الجائفي';
+    try {
+      if (typeof navigator !== 'undefined' && typeof navigator.share === 'function') {
+        await navigator.share({ title: 'زوامل عيسى الليث', text });
+        return;
+      }
+      await navigator.clipboard.writeText(text);
+      showToast('تم نسخ رسالة مشاركة التطبيق', 'success');
+    } catch {
+      showToast('تم نسخ رسالة مشاركة التطبيق', 'info');
+    }
+  };
+
+  const handleRateApp = () => {
+    showToast('شكراً لدعمك! سيتم توجيهك لتقييم التطبيق على المتجر عند النشر', 'success');
+  };
+
   return (
-    <ScrollView
-      style={styles.scroll}
-      contentContainerStyle={styles.container}
-      showsVerticalScrollIndicator={false}
-    >
+    <View style={styles.root}>
+      <ScrollView
+        style={styles.scroll}
+        contentContainerStyle={styles.container}
+        showsVerticalScrollIndicator={false}
+      >
       <Text style={[styles.heading, { color: theme.textPrimary }]}>الإعدادات</Text>
 
       {/* بطاقة تحديث المكتبة */}
@@ -231,19 +268,202 @@ export const SettingsScreen: React.FC<SettingsScreenProps> = ({ theme }) => {
         </Pressable>
       </View>
 
-      {/* عن التطبيق */}
+      {/* عن التطبيق والخصوصية */}
       <View style={[styles.card, { backgroundColor: theme.surface, borderColor: theme.border }]}>
-        <Text style={[styles.sectionHeading, { color: theme.accent }]}>عن التطبيق</Text>
-        <Text style={[styles.aboutLine, { color: theme.textSecondary }]}>
-          زوامل عيسى الليث — استماع فوري، كلمات القصائد، وحفظ للاستماع بدون إنترنت.
-        </Text>
-        <Text style={[styles.aboutLine, { color: theme.textMuted }]}>الإصدار 1.0.0</Text>
+        <Text style={[styles.sectionHeading, { color: theme.accent }]}>حول التطبيق والخصوصية</Text>
+
+        <Pressable
+          onPress={() => setShowPrivacyModal(true)}
+          style={[styles.settingRow, { borderBottomColor: theme.border }]}
+        >
+          <View style={styles.settingMeta}>
+            <Text style={[styles.settingTitle, { color: theme.textPrimary }]}>سياسة الخصوصية</Text>
+            <Text style={[styles.settingSub, { color: theme.textSecondary }]}>
+              كيف يحافظ التطبيق على خصوصيتك وبياناتك المحلية
+            </Text>
+          </View>
+          <Icon name="chevron-left" size={18} color={theme.textMuted} />
+        </Pressable>
+
+        <Pressable
+          onPress={() => void handleShareApp()}
+          style={[styles.settingRow, { borderBottomColor: theme.border }]}
+        >
+          <View style={styles.settingMeta}>
+            <Text style={[styles.settingTitle, { color: theme.textPrimary }]}>مشاركة التطبيق</Text>
+            <Text style={[styles.settingSub, { color: theme.textSecondary }]}>
+              شارك التطبيق مع أصدقائك ومحبي زوامل عيسى الليث
+            </Text>
+          </View>
+          <Icon name="share" size={17} color={theme.accent} />
+        </Pressable>
+
+        <Pressable
+          onPress={handleRateApp}
+          style={[styles.settingRow, { borderBottomColor: theme.border }]}
+        >
+          <View style={styles.settingMeta}>
+            <Text style={[styles.settingTitle, { color: theme.textPrimary }]}>تقييم التطبيق</Text>
+            <Text style={[styles.settingSub, { color: theme.textSecondary }]}>
+              ادعمنا بتقييمك الإيجابي على متجر التطبيقات
+            </Text>
+          </View>
+          <Icon name="sparkles" size={17} color={theme.accent} />
+        </Pressable>
+
+        <Pressable
+          onPress={() => setShowSupportModal(true)}
+          style={[styles.settingRow, { borderBottomColor: theme.border }]}
+        >
+          <View style={styles.settingMeta}>
+            <Text style={[styles.settingTitle, { color: theme.textPrimary }]}>
+              التواصل والإبلاغ عن مشكلة
+            </Text>
+            <Text style={[styles.settingSub, { color: theme.textSecondary }]}>
+              أرسل ملاحظاتك أو تواصل مع فريق الدعم عبر واتساب
+            </Text>
+          </View>
+          <Icon name="chevron-left" size={18} color={theme.textMuted} />
+        </Pressable>
+
+        <View style={{ gap: 4, paddingTop: 4 }}>
+          <Text style={[styles.aboutLine, { color: theme.textSecondary }]}>
+            زوامل عيسى الليث — استماع فوري، كلمات القصائد، وحفظ للاستماع بدون إنترنت.
+          </Text>
+          <Text style={[styles.aboutLine, { color: theme.textPrimary, fontWeight: '700' }]}>
+            تطوير م/ هاشم الجائفي
+          </Text>
+          <Text style={[styles.aboutLine, { color: theme.textMuted }]}>
+            الإصدار 1.0.0 • جميع الحقوق محفوظة © 2026
+          </Text>
+        </View>
       </View>
-    </ScrollView>
+      </ScrollView>
+
+      {/* نافذة سياسة الخصوصية المنبثقة وسط الشاشة */}
+      {showPrivacyModal && (
+        <View style={styles.modalBackdrop}>
+          <View
+            style={[
+              styles.modalDialog,
+              {
+                backgroundColor: theme.surface,
+                borderColor: theme.borderStrong,
+              },
+            ]}
+          >
+            <View style={styles.cardHeadRow}>
+              <Text style={[styles.cardTitle, { color: theme.textPrimary }]}>سياسة الخصوصية</Text>
+              <Pressable onPress={() => setShowPrivacyModal(false)} style={{ padding: 4 }}>
+                <Icon name="close" size={18} color={theme.textSecondary} />
+              </Pressable>
+            </View>
+            <ScrollView style={styles.modalScroll} showsVerticalScrollIndicator={false}>
+              <Text style={[styles.aboutLine, { color: theme.textSecondary, lineHeight: 22 }]}>
+                {`يحترم تطبيق "زوامل عيسى الليث" خصوصية المستخدمين بالكامل:\n\n` +
+                  `1. لا يجمع التطبيق أي بيانات شخصية حساسة (مثل الاسم، البريد الإلكتروني، رقم الهاتف، أو الموقع الجغرافي).\n` +
+                  `2. يتم حفظ المفضلة، قوائم التشغيل، سجل الاستماع، والملفات المحمّلة للاستماع أوفلاين محلياً على جهازك فقط.\n` +
+                  `3. يتصل التطبيق بالخادم فقط لجلب قائمة الزوامل الجديدة وبث أو تحميل المقاطع الصوتية.\n` +
+                  `4. يمكنك في أي وقت حذف جميع الملفات المحفوظة وسجل الاستماع من داخل التطبيق بضغطة زر.\n\n` +
+                  `تطوير م/ هاشم الجائفي — جميع الحقوق محفوظة © 2026.`}
+              </Text>
+            </ScrollView>
+            <Pressable
+              onPress={() => setShowPrivacyModal(false)}
+              style={[styles.modalBtn, { backgroundColor: theme.accent }]}
+            >
+              <Text style={[styles.primaryBtnText, { color: theme.accentText }]}>إغلاق</Text>
+            </Pressable>
+          </View>
+        </View>
+      )}
+
+      {/* نافذة التواصل وفريق الدعم المنبثقة وسط الشاشة */}
+      {showSupportModal && (
+        <View style={styles.modalBackdrop}>
+          <View
+            style={[
+              styles.modalDialog,
+              {
+                backgroundColor: theme.surface,
+                borderColor: theme.borderStrong,
+              },
+            ]}
+          >
+            <View style={styles.cardHeadRow}>
+              <Text style={[styles.cardTitle, { color: theme.textPrimary }]}>
+                التواصل وفريق الدعم
+              </Text>
+              <Pressable onPress={() => setShowSupportModal(false)} style={{ padding: 4 }}>
+                <Icon name="close" size={18} color={theme.textSecondary} />
+              </Pressable>
+            </View>
+
+            <Text style={[styles.aboutLine, { color: theme.textSecondary, lineHeight: 22 }]}>
+              هل لديك استفسار، اقتراح، أو واجهت أي مشكلة في تطبيق زوامل عيسى الليث؟ يمكنك مراسلة فريق الدعم مباشرة عبر واتساب.
+            </Text>
+
+            <Pressable
+              onPress={handleOpenWhatsAppSupport}
+              style={[styles.modalBtn, { backgroundColor: '#25D366' }]}
+            >
+              <Icon name="external" size={16} color="#FFFFFF" />
+              <Text style={[styles.primaryBtnText, { color: '#FFFFFF' }]}>
+                مراسلة فريق الدعم الآن (واتساب)
+              </Text>
+            </Pressable>
+
+            <Pressable
+              onPress={() => setShowSupportModal(false)}
+              style={[
+                styles.modalBtn,
+                { backgroundColor: theme.surfaceAlt, borderColor: theme.border, borderWidth: 1 },
+              ]}
+            >
+              <Text style={[styles.secondaryBtnText, { color: theme.textPrimary }]}>إغلاق</Text>
+            </Pressable>
+          </View>
+        </View>
+      )}
+    </View>
   );
 };
 
 const styles = StyleSheet.create({
+  root: {
+    flex: 1,
+    minHeight: 0,
+    position: 'relative',
+  },
+  modalBackdrop: {
+    ...StyleSheet.absoluteFillObject,
+    zIndex: 90,
+    backgroundColor: 'rgba(0, 0, 0, 0.68)',
+    justifyContent: 'center',
+    alignItems: 'center',
+    paddingHorizontal: 20,
+  },
+  modalDialog: {
+    width: '100%',
+    maxWidth: 340,
+    maxHeight: '80%',
+    borderRadius: RADIUS.lg,
+    borderWidth: 1,
+    padding: 18,
+    gap: 12,
+  },
+  modalScroll: {
+    maxHeight: 280,
+  },
+  modalBtn: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    gap: 7,
+    paddingVertical: 11,
+    borderRadius: RADIUS.md,
+    width: '100%',
+  },
   scroll: {
     flex: 1,
     minHeight: 0,

@@ -1,0 +1,30 @@
+{
+  "project_info": {
+    "project_number": "745184657571",
+    "project_id": "essa-97f6b",
+    "storage_bucket": "essa-97f6b.firebasestorage.app"
+  },
+  "client": [
+    {
+      "client_info": {
+        "mobilesdk_app_id": "1:745184657571:android:ffab6870e9ef455dbc3f16",
+        "android_client_info": {
+          "package_name": "com.essaalleth.app"
+        }
+      },
+      "oauth_client": [],
+      "api_key": [
+        {
+          "current_key": "AIzaSyBjVyvsr9ZGmgZu4r_f1eFrF7ezqSTgblg"
+        }
+      ],
+      "services": {
+        "appinvite_service": {
+          "other_platform_oauth_client": []
+        }
+      }
+    }
+  ],
+  "configuration_version": "1"
+}
+

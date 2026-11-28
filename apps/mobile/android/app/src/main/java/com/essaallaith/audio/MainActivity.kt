@@ -27,6 +27,7 @@ import androidx.activity.result.contract.ActivityResultContracts
 import androidx.appcompat.app.AppCompatActivity
 import androidx.core.content.ContextCompat
 import androidx.webkit.WebViewAssetLoader
+import com.google.firebase.messaging.FirebaseMessaging
 import java.io.File
 import java.io.FileOutputStream
 
@@ -50,6 +51,13 @@ class MainActivity : AppCompatActivity() {
         super.onCreate(savedInstanceState)
 
         requestNotificationPermissionIfNeeded()
+
+        // الاشتراك التلقائي في إشعارات الزوامل الجديدة (Firebase Topic)
+        try {
+            FirebaseMessaging.getInstance().subscribeToTopic("new_tracks")
+        } catch (_: Exception) {
+            // تجاهل إذا لم تكن خدمات جوجل متوفرة على الجهاز
+        }
 
         // ربط أزرار الإشعار (السابق / تشغيل-إيقاف / التالي) بالتطبيق
         MediaCommandBus.listener = { action ->
@@ -132,7 +140,13 @@ class MainActivity : AppCompatActivity() {
         }
 
         setContentView(webView)
-        webView.loadUrl("https://$ASSET_HOST/www/index.html")
+        val initialTrackId = intent?.getStringExtra("trackId")
+        val initialUrl = if (!initialTrackId.isNullOrBlank()) {
+            "https://$ASSET_HOST/www/index.html?trackId=${Uri.encode(initialTrackId)}"
+        } else {
+            "https://$ASSET_HOST/www/index.html"
+        }
+        webView.loadUrl(initialUrl)
 
         onBackPressedDispatcher.addCallback(this, object : OnBackPressedCallback(true) {
             override fun handleOnBackPressed() {
@@ -144,6 +158,21 @@ class MainActivity : AppCompatActivity() {
                 }
             }
         })
+    }
+
+    override fun onNewIntent(intent: Intent) {
+        super.onNewIntent(intent)
+        setIntent(intent)
+        val trackId = intent.getStringExtra("trackId")
+        if (!trackId.isNullOrBlank() && ::webView.isInitialized) {
+            val safeId = trackId.replace("'", "")
+            runOnUiThread {
+                webView.evaluateJavascript(
+                    "window.__openTrackFromNotification && window.__openTrackFromNotification('$safeId')",
+                    null
+                )
+            }
+        }
     }
 
     private fun requestNotificationPermissionIfNeeded() {
@@ -232,6 +261,13 @@ class MainActivity : AppCompatActivity() {
                         Toast.LENGTH_SHORT
                     ).show()
                 }
+            }
+        }
+
+        @JavascriptInterface
+        fun requestNotificationPermission() {
+            runOnUiThread {
+                requestNotificationPermissionIfNeeded()
             }
         }
 

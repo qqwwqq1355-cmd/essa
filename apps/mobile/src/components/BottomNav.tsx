@@ -13,6 +13,7 @@ interface BottomNavProps {
 const TABS: Array<{ id: ActiveTab; label: string; icon: IconName }> = [
   { id: 'home', label: 'الرئيسية', icon: 'home' },
   { id: 'search', label: 'البحث', icon: 'search' },
+  { id: 'offline', label: 'المحمّلة', icon: 'download' },
   { id: 'library', label: 'المكتبة', icon: 'library' },
   { id: 'settings', label: 'الإعدادات', icon: 'settings' },
 ];
@@ -89,7 +90,7 @@ const styles = StyleSheet.create({
     minHeight: 48,
   },
   pill: {
-    paddingHorizontal: 16,
+    paddingHorizontal: 12,
     paddingVertical: 5,
     borderRadius: 999,
   },
