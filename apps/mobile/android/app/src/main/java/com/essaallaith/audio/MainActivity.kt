@@ -189,7 +189,6 @@ class MainActivity : AppCompatActivity() {
             // تجاهل
         }
         topBannerContainer = bannerHolder
-        rootLayout.addView(bannerHolder)
 
         webView.layoutParams = LinearLayout.LayoutParams(
             LinearLayout.LayoutParams.MATCH_PARENT,
@@ -197,6 +196,7 @@ class MainActivity : AppCompatActivity() {
             1f
         )
         rootLayout.addView(webView)
+        rootLayout.addView(bannerHolder)
         setContentView(rootLayout)
         val initialTrackId = intent?.getStringExtra("trackId")
         val initialUrl = if (!initialTrackId.isNullOrBlank()) {

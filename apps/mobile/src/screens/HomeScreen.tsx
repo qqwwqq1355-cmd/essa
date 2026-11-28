@@ -259,6 +259,9 @@ export const HomeScreen: React.FC<HomeScreenProps> = React.memo(({ theme }) => {
         </View>
       </View>
 
+      {/* البنر الإعلاني أسفل الهيدر مباشرة */}
+      <InlineAdSlot theme={theme} label="إعلان مموّل • Start.io" />
+
       {/* شاشة التحميل الأولى عند فتح التطبيق لأول مرة (بدون أي أغاني تجريبية!) */}
       {tracks.length === 0 && (
         <View style={[styles.loadingCard, { backgroundColor: theme.surface, borderColor: theme.border }]}>

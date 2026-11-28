@@ -5,6 +5,7 @@ import { useAppStore } from '../store/useAppStore';
 import { formatFileSize } from '../utils/format';
 import { TrackRow } from '../components/TrackRow';
 import { Icon } from '../components/Icon';
+import { InlineAdSlot } from '../components/InlineAdSlot';
 
 interface LibraryScreenProps {
   theme: ThemePalette;
@@ -154,6 +155,8 @@ export const LibraryScreen: React.FC<LibraryScreenProps> = ({ theme }) => {
         contentContainerStyle={styles.scrollBody}
         showsVerticalScrollIndicator={false}
       >
+        <InlineAdSlot theme={theme} label="إعلان مموّل • Start.io" />
+
         {/* بطاقة سجل الاستماع / استكمل الاستماع */}
         {segment === 'history' && (
           <View style={[styles.storageCard, { backgroundColor: theme.surface, borderColor: theme.border }]}>

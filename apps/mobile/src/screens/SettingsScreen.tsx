@@ -4,6 +4,7 @@ import { FONTS, RADIUS, type ThemePalette } from '../theme/tokens';
 import { useAppStore } from '../store/useAppStore';
 import { formatRelativeArabicDate } from '../utils/format';
 import { Icon } from '../components/Icon';
+import { InlineAdSlot } from '../components/InlineAdSlot';
 
 interface SettingsScreenProps {
   theme: ThemePalette;
@@ -73,6 +74,8 @@ export const SettingsScreen: React.FC<SettingsScreenProps> = ({ theme }) => {
         showsVerticalScrollIndicator={false}
       >
       <Text style={[styles.heading, { color: theme.textPrimary }]}>الإعدادات</Text>
+
+      <InlineAdSlot theme={theme} label="إعلان مموّل • Start.io" />
 
       {/* بطاقة تحديث المكتبة */}
       <View style={[styles.card, { backgroundColor: theme.surface, borderColor: theme.border }]}>

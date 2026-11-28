@@ -10,6 +10,7 @@ import { FONTS, RADIUS, type ThemePalette } from '../theme/tokens';
 import { useAppStore } from '../store/useAppStore';
 import { TrackRow } from '../components/TrackRow';
 import { Icon } from '../components/Icon';
+import { InlineAdSlot } from '../components/InlineAdSlot';
 
 interface SearchScreenProps {
   theme: ThemePalette;
@@ -165,6 +166,10 @@ export const SearchScreen: React.FC<SearchScreenProps> = React.memo(({ theme }) 
             يعمل أوفلاين • يبحث داخل العناوين والكلمات ويتجاهل التشكيل والهمزات تلقائياً
           </Text>
         </View>
+      </View>
+
+      <View style={{ paddingHorizontal: 14, paddingBottom: 4 }}>
+        <InlineAdSlot theme={theme} label="إعلان مموّل • Start.io" />
       </View>
 
       <ScrollView

@@ -5,6 +5,7 @@ import { useAppStore } from '../store/useAppStore';
 import { formatFileSize } from '../utils/format';
 import { TrackRow } from '../components/TrackRow';
 import { Icon } from '../components/Icon';
+import { InlineAdSlot } from '../components/InlineAdSlot';
 
 interface OfflineScreenProps {
   theme: ThemePalette;
@@ -119,6 +120,8 @@ export const OfflineScreen: React.FC<OfflineScreenProps> = ({ theme }) => {
         contentContainerStyle={styles.scrollBody}
         showsVerticalScrollIndicator={false}
       >
+        <InlineAdSlot theme={theme} label="إعلان مموّل • Start.io" />
+
         {/* بطاقة مساحة التخزين الأوفلاين */}
         <View style={[styles.storageCard, { backgroundColor: theme.surface, borderColor: theme.border }]}>
           <View style={styles.storageTop}>
