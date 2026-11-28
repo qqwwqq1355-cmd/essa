@@ -169,7 +169,7 @@ export const SearchScreen: React.FC<SearchScreenProps> = React.memo(({ theme }) 
       </View>
 
       <View style={{ paddingHorizontal: 14, paddingBottom: 4 }}>
-        <InlineAdSlot theme={theme} label="إعلان مموّل • Start.io" />
+        <InlineAdSlot theme={theme} label="إعلان مموّل • Unity Ads" />
       </View>
 
       <ScrollView

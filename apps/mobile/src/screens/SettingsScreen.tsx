@@ -75,7 +75,7 @@ export const SettingsScreen: React.FC<SettingsScreenProps> = ({ theme }) => {
       >
       <Text style={[styles.heading, { color: theme.textPrimary }]}>الإعدادات</Text>
 
-      <InlineAdSlot theme={theme} label="إعلان مموّل • Start.io" />
+      <InlineAdSlot theme={theme} label="إعلان مموّل • Unity Ads" />
 
       {/* بطاقة تحديث المكتبة */}
       <View style={[styles.card, { backgroundColor: theme.surface, borderColor: theme.border }]}>

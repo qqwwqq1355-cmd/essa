@@ -260,7 +260,7 @@ export const HomeScreen: React.FC<HomeScreenProps> = React.memo(({ theme }) => {
       </View>
 
       {/* البنر الإعلاني أسفل الهيدر مباشرة */}
-      <InlineAdSlot theme={theme} label="إعلان مموّل • Start.io" />
+      <InlineAdSlot theme={theme} label="إعلان مموّل • Unity Ads" />
 
       {/* شاشة التحميل الأولى عند فتح التطبيق لأول مرة (بدون أي أغاني تجريبية!) */}
       {tracks.length === 0 && (
@@ -508,7 +508,7 @@ export const HomeScreen: React.FC<HomeScreenProps> = React.memo(({ theme }) => {
                   onPlaylistPress={() => openPlaylistPicker(track.id)}
                 />
                 {(idx + 1) % 10 === 0 && (
-                  <InlineAdSlot theme={theme} label="إعلان مموّل • Start.io" />
+                  <InlineAdSlot theme={theme} label="إعلان مموّل • Unity Ads" />
                 )}
               </React.Fragment>
             ))}

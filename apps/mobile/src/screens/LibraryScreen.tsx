@@ -155,7 +155,7 @@ export const LibraryScreen: React.FC<LibraryScreenProps> = ({ theme }) => {
         contentContainerStyle={styles.scrollBody}
         showsVerticalScrollIndicator={false}
       >
-        <InlineAdSlot theme={theme} label="إعلان مموّل • Start.io" />
+        <InlineAdSlot theme={theme} label="إعلان مموّل • Unity Ads" />
 
         {/* بطاقة سجل الاستماع / استكمل الاستماع */}
         {segment === 'history' && (

@@ -216,7 +216,7 @@ export const FullPlayerModal: React.FC<FullPlayerModalProps> = ({ theme }) => {
 
       {/* خانة إعلان Start.io أسفل شريط أزرار المشغّل والكلمات والقائمة */}
       <View style={{ paddingHorizontal: 14, paddingBottom: 4 }}>
-        <InlineAdSlot theme={theme} label="إعلان مموّل • Start.io" />
+        <InlineAdSlot theme={theme} label="إعلان مموّل • Unity Ads" />
       </View>
 
       {/* 1) وضع المشغّل الكامل */}

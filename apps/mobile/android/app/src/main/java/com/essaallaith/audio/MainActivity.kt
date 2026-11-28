@@ -571,9 +571,9 @@ class MainActivity : AppCompatActivity() {
         private const val ASSET_HOST = "appassets.androidplatform.net"
         private const val UNITY_GAME_ID = "800458205"
         private const val UNITY_TEST_MODE = false
-        private const val UNITY_BANNER_ID = "BP_Banner_Android"
-        private const val UNITY_INTERSTITIAL_ID = "BP_Interstitial_Android"
-        private const val UNITY_REWARDED_ID = "BP_Rewarded_Android"
+        private const val UNITY_BANNER_ID = "Banner_Android"
+        private const val UNITY_INTERSTITIAL_ID = "Interstitial_Android"
+        private const val UNITY_REWARDED_ID = "Rewarded_Android"
     }
 }
 

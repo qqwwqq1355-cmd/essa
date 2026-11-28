@@ -120,7 +120,7 @@ export const OfflineScreen: React.FC<OfflineScreenProps> = ({ theme }) => {
         contentContainerStyle={styles.scrollBody}
         showsVerticalScrollIndicator={false}
       >
-        <InlineAdSlot theme={theme} label="إعلان مموّل • Start.io" />
+        <InlineAdSlot theme={theme} label="إعلان مموّل • Unity Ads" />
 
         {/* بطاقة مساحة التخزين الأوفلاين */}
         <View style={[styles.storageCard, { backgroundColor: theme.surface, borderColor: theme.border }]}>
