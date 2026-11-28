@@ -12,6 +12,10 @@ import {
 } from '../services/audio/audioCache';
 import { pauseImageLoading } from '../services/images/imageLoader';
 import { fetchDeltaSync, getDefaultApiBaseUrl } from '../services/api/syncClient';
+import {
+  requestRewardedAdForDownload,
+  triggerInterstitialOnTrackPlay,
+} from '../services/ads/startIoAds';
 
 export type ActiveTab = 'home' | 'search' | 'offline' | 'library' | 'settings';
 export type RepeatMode = 'off' | 'all' | 'one';
@@ -456,6 +460,9 @@ export const useAppStore = create<AppState>((set, get) => {
         state.playbackRate,
         state.downloadedIds.includes(trackId)
       );
+
+      // إعلان بيني ذكي من Start.io كل 3 زوامل (مع فاصل زمني لا يقل عن دقيقتين)
+      triggerInterstitialOnTrackPlay();
     },
 
     togglePlayPause: async () => {
@@ -599,7 +606,8 @@ export const useAppStore = create<AppState>((set, get) => {
 
       set((s) => ({ downloadingIds: { ...s.downloadingIds, [trackId]: 40 } }));
 
-      void saveAudioToDevice(track.streamUrl, track.title).then((ok) => {
+      void requestRewardedAdForDownload().then(() =>
+        saveAudioToDevice(track.streamUrl!, track.title).then((ok) => {
         set((s) => {
           const nextDownloading = { ...s.downloadingIds };
           delete nextDownloading[trackId];
@@ -615,7 +623,8 @@ export const useAppStore = create<AppState>((set, get) => {
         } else {
           get().showToast('تعذّر حفظ الملف في الجهاز حالياً', 'error');
         }
-      });
+        })
+      );
     },
 
     removeDownload: (trackId) => {

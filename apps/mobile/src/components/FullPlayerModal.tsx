@@ -7,6 +7,7 @@ import { formatDuration, formatFileSize, formatPlayCount, formatRelativeArabicDa
 import { cleanLyricsLines } from '../utils/lyrics';
 import { TrackCover } from './TrackCover';
 import { Icon } from './Icon';
+import { InlineAdSlot } from './InlineAdSlot';
 
 interface FullPlayerModalProps {
   theme: ThemePalette;
@@ -211,6 +212,11 @@ export const FullPlayerModal: React.FC<FullPlayerModalProps> = ({ theme }) => {
             );
           })}
         </View>
+      </View>
+
+      {/* خانة إعلان Start.io أسفل شريط أزرار المشغّل والكلمات والقائمة */}
+      <View style={{ paddingHorizontal: 14, paddingBottom: 4 }}>
+        <InlineAdSlot theme={theme} label="إعلان مموّل • Start.io" />
       </View>
 
       {/* 1) وضع المشغّل الكامل */}

@@ -1,6 +1,10 @@
 {
   "rewrites": [
     {
+      "source": "/privacy",
+      "destination": "/privacy.html"
+    },
+    {
       "source": "/v1/:path*",
       "destination": "https://essa-alleth-edge-api.qqwwqq1355.workers.dev/v1/:path*"
     }

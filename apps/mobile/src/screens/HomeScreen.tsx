@@ -9,6 +9,7 @@ import { cleanLyricsLines } from '../utils/lyrics';
 import { TrackCover } from '../components/TrackCover';
 import { TrackRow } from '../components/TrackRow';
 import { Icon } from '../components/Icon';
+import { InlineAdSlot } from '../components/InlineAdSlot';
 
 interface HomeScreenProps {
   theme: ThemePalette;
@@ -485,24 +486,28 @@ export const HomeScreen: React.FC<HomeScreenProps> = React.memo(({ theme }) => {
             </View>
 
             {visibleTracks.map((track, idx) => (
-              <TrackRow
-                key={track.id}
-                track={track}
-                theme={theme}
-                isCurrent={currentTrackId === track.id}
-                isPlaying={currentTrackId === track.id && isPlaying}
-                isFavorite={favorites.includes(track.id)}
-                isDownloaded={downloadedIds.includes(track.id)}
-                downloadProgress={downloadingIds[track.id]}
-                autoLoadCover={idx < 40}
-                onPress={() => void playTrack(track.id, filteredIds)}
-                onLyricsPress={() => void playTrack(track.id, filteredIds, 'lyrics')}
-                onToggleFavorite={() => toggleFavorite(track.id)}
-                onDownloadPress={() =>
-                  downloadedIds.includes(track.id) ? removeDownload(track.id) : downloadTrack(track.id)
-                }
-                onPlaylistPress={() => openPlaylistPicker(track.id)}
-              />
+              <React.Fragment key={track.id}>
+                <TrackRow
+                  track={track}
+                  theme={theme}
+                  isCurrent={currentTrackId === track.id}
+                  isPlaying={currentTrackId === track.id && isPlaying}
+                  isFavorite={favorites.includes(track.id)}
+                  isDownloaded={downloadedIds.includes(track.id)}
+                  downloadProgress={downloadingIds[track.id]}
+                  autoLoadCover={idx < 40}
+                  onPress={() => void playTrack(track.id, filteredIds)}
+                  onLyricsPress={() => void playTrack(track.id, filteredIds, 'lyrics')}
+                  onToggleFavorite={() => toggleFavorite(track.id)}
+                  onDownloadPress={() =>
+                    downloadedIds.includes(track.id) ? removeDownload(track.id) : downloadTrack(track.id)
+                  }
+                  onPlaylistPress={() => openPlaylistPicker(track.id)}
+                />
+                {(idx + 1) % 10 === 0 && (
+                  <InlineAdSlot theme={theme} label="إعلان مموّل • Start.io" />
+                )}
+              </React.Fragment>
             ))}
 
             {visibleCount < filteredTracks.length && (

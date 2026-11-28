@@ -13,6 +13,8 @@ import android.os.Bundle
 import android.os.Environment
 import android.provider.MediaStore
 import android.util.Base64
+import android.view.Gravity
+import android.view.View
 import android.webkit.JavascriptInterface
 import android.webkit.ValueCallback
 import android.webkit.WebChromeClient
@@ -21,6 +23,8 @@ import android.webkit.WebResourceResponse
 import android.webkit.WebSettings
 import android.webkit.WebView
 import android.webkit.WebViewClient
+import android.widget.FrameLayout
+import android.widget.LinearLayout
 import android.widget.Toast
 import androidx.activity.OnBackPressedCallback
 import androidx.activity.result.contract.ActivityResultContracts
@@ -28,12 +32,20 @@ import androidx.appcompat.app.AppCompatActivity
 import androidx.core.content.ContextCompat
 import androidx.webkit.WebViewAssetLoader
 import com.google.firebase.messaging.FirebaseMessaging
+import com.startapp.sdk.ads.banner.Banner
+import com.startapp.sdk.adsbase.Ad
+import com.startapp.sdk.adsbase.StartAppAd
+import com.startapp.sdk.adsbase.StartAppSDK
+import com.startapp.sdk.adsbase.adlisteners.AdEventListener
 import java.io.File
 import java.io.FileOutputStream
 
 class MainActivity : AppCompatActivity() {
 
     private lateinit var webView: WebView
+    private var topBannerContainer: FrameLayout? = null
+    private var interstitialAd: StartAppAd? = null
+    private var lastInterstitialShownAt: Long = 0L
     private var fileChooserCallback: ValueCallback<Array<Uri>>? = null
 
     private val openAudioLauncher =
@@ -57,6 +69,15 @@ class MainActivity : AppCompatActivity() {
             FirebaseMessaging.getInstance().subscribeToTopic("new_tracks")
         } catch (_: Exception) {
             // تجاهل إذا لم تكن خدمات جوجل متوفرة على الجهاز
+        }
+
+        // تهيئة شبكة إعلانات Start.io
+        try {
+            StartAppSDK.init(this, START_IO_APP_ID, false)
+            StartAppAd.disableSplash()
+            interstitialAd = StartAppAd(this).also { it.loadAd() }
+        } catch (_: Exception) {
+            // تجاهل في حال تعذّر التهيئة
         }
 
         // ربط أزرار الإشعار (السابق / تشغيل-إيقاف / التالي) بالتطبيق
@@ -139,7 +160,44 @@ class MainActivity : AppCompatActivity() {
             }
         }
 
-        setContentView(webView)
+        // تخطيط عمودي يضع بنر Start.io في أعلى الشاشة والـ WebView أسفله بسلاسة
+        val rootLayout = LinearLayout(this).apply {
+            orientation = LinearLayout.VERTICAL
+            setBackgroundColor(Color.parseColor("#0A0C10"))
+            layoutParams = LinearLayout.LayoutParams(
+                LinearLayout.LayoutParams.MATCH_PARENT,
+                LinearLayout.LayoutParams.MATCH_PARENT
+            )
+        }
+
+        val bannerHolder = FrameLayout(this).apply {
+            setBackgroundColor(Color.parseColor("#0A0C10"))
+            layoutParams = LinearLayout.LayoutParams(
+                LinearLayout.LayoutParams.MATCH_PARENT,
+                LinearLayout.LayoutParams.WRAP_CONTENT
+            )
+        }
+        try {
+            val banner = Banner(this)
+            val bannerParams = FrameLayout.LayoutParams(
+                FrameLayout.LayoutParams.WRAP_CONTENT,
+                FrameLayout.LayoutParams.WRAP_CONTENT,
+                Gravity.CENTER_HORIZONTAL
+            )
+            bannerHolder.addView(banner, bannerParams)
+        } catch (_: Exception) {
+            // تجاهل
+        }
+        topBannerContainer = bannerHolder
+        rootLayout.addView(bannerHolder)
+
+        webView.layoutParams = LinearLayout.LayoutParams(
+            LinearLayout.LayoutParams.MATCH_PARENT,
+            0,
+            1f
+        )
+        rootLayout.addView(webView)
+        setContentView(rootLayout)
         val initialTrackId = intent?.getStringExtra("trackId")
         val initialUrl = if (!initialTrackId.isNullOrBlank()) {
             "https://$ASSET_HOST/www/index.html?trackId=${Uri.encode(initialTrackId)}"
@@ -272,6 +330,66 @@ class MainActivity : AppCompatActivity() {
         }
 
         @JavascriptInterface
+        fun setTopBannerVisible(visible: Boolean) {
+            runOnUiThread {
+                topBannerContainer?.visibility = if (visible) View.VISIBLE else View.GONE
+            }
+        }
+
+        @JavascriptInterface
+        fun showInterstitialAd() {
+            runOnUiThread {
+                val now = System.currentTimeMillis()
+                if (now - lastInterstitialShownAt < 120_000L) return@runOnUiThread
+                try {
+                    val ad = interstitialAd ?: StartAppAd(this@MainActivity)
+                    if (ad.isReady) {
+                        lastInterstitialShownAt = now
+                        ad.showAd()
+                        interstitialAd = StartAppAd(this@MainActivity).also { it.loadAd() }
+                    } else {
+                        ad.loadAd()
+                    }
+                } catch (_: Exception) {
+                    // تجاهل
+                }
+            }
+        }
+
+        @JavascriptInterface
+        fun showRewardedAd(callbackId: String) {
+            runOnUiThread {
+                val safeId = callbackId.replace("'", "")
+                val deliverReward = {
+                    if (::webView.isInitialized) {
+                        webView.evaluateJavascript(
+                            "window.__onRewardedAdResult && window.__onRewardedAdResult('$safeId', true)",
+                            null
+                        )
+                    }
+                }
+                try {
+                    val rewarded = StartAppAd(this@MainActivity)
+                    rewarded.setVideoListener {
+                        deliverReward()
+                    }
+                    rewarded.loadAd(StartAppAd.AdMode.REWARDED_VIDEO, object : AdEventListener {
+                        override fun onReceiveAd(ad: Ad) {
+                            rewarded.showAd()
+                        }
+
+                        override fun onFailedToReceiveAd(ad: Ad?) {
+                            // إذا لم يتوفر فيديو مكافأة حالياً لا نوقف المستخدم عن التحميل
+                            deliverReward()
+                        }
+                    })
+                } catch (_: Exception) {
+                    deliverReward()
+                }
+            }
+        }
+
+        @JavascriptInterface
         fun exitApp() {
             runOnUiThread {
                 finishAndRemoveTask()
@@ -337,6 +455,7 @@ class MainActivity : AppCompatActivity() {
 
     companion object {
         private const val ASSET_HOST = "appassets.androidplatform.net"
+        private const val START_IO_APP_ID = "210645029"
     }
 }
 
