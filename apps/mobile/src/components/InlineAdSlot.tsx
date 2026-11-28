@@ -15,7 +15,7 @@ interface InlineAdSlotProps {
  */
 export const InlineAdSlot: React.FC<InlineAdSlotProps> = ({
   theme,
-  label = 'مساحة إعلانية • Start.io',
+  label = 'إعلان مموّل • Unity Ads',
 }) => {
   return (
     <Pressable

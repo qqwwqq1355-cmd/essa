@@ -32,11 +32,13 @@ import androidx.appcompat.app.AppCompatActivity
 import androidx.core.content.ContextCompat
 import androidx.webkit.WebViewAssetLoader
 import com.google.firebase.messaging.FirebaseMessaging
-import com.startapp.sdk.ads.banner.Banner
-import com.startapp.sdk.adsbase.Ad
-import com.startapp.sdk.adsbase.StartAppAd
-import com.startapp.sdk.adsbase.StartAppSDK
-import com.startapp.sdk.adsbase.adlisteners.AdEventListener
+import com.unity3d.ads.IUnityAdsInitializationListener
+import com.unity3d.ads.IUnityAdsLoadListener
+import com.unity3d.ads.IUnityAdsShowListener
+import com.unity3d.ads.UnityAds
+import com.unity3d.ads.UnityAdsShowOptions
+import com.unity3d.services.banners.BannerView
+import com.unity3d.services.banners.UnityBannerSize
 import java.io.File
 import java.io.FileOutputStream
 
@@ -44,7 +46,9 @@ class MainActivity : AppCompatActivity() {
 
     private lateinit var webView: WebView
     private var topBannerContainer: FrameLayout? = null
-    private var interstitialAd: StartAppAd? = null
+    private var unityBannerView: BannerView? = null
+    private var isInterstitialLoaded: Boolean = false
+    private var isRewardedLoaded: Boolean = false
     private var lastInterstitialShownAt: Long = 0L
     private var fileChooserCallback: ValueCallback<Array<Uri>>? = null
 
@@ -71,14 +75,8 @@ class MainActivity : AppCompatActivity() {
             // تجاهل إذا لم تكن خدمات جوجل متوفرة على الجهاز
         }
 
-        // تهيئة شبكة إعلانات Start.io
-        try {
-            StartAppSDK.init(this, START_IO_APP_ID, false)
-            StartAppAd.disableSplash()
-            interstitialAd = StartAppAd(this).also { it.loadAd() }
-        } catch (_: Exception) {
-            // تجاهل في حال تعذّر التهيئة
-        }
+        // تهيئة شبكة إعلانات Unity Ads
+        initUnityAds()
 
         // ربط أزرار الإشعار (السابق / تشغيل-إيقاف / التالي) بالتطبيق
         MediaCommandBus.listener = { action ->
@@ -160,7 +158,7 @@ class MainActivity : AppCompatActivity() {
             }
         }
 
-        // تخطيط عمودي يضع بنر Start.io في أعلى الشاشة والـ WebView أسفله بسلاسة
+        // تخطيط عمودي يضع الـ WebView بالأعلى وبنر Unity Ads الأصلي أسفله بسلاسة
         val rootLayout = LinearLayout(this).apply {
             orientation = LinearLayout.VERTICAL
             setBackgroundColor(Color.parseColor("#0A0C10"))
@@ -176,17 +174,6 @@ class MainActivity : AppCompatActivity() {
                 LinearLayout.LayoutParams.MATCH_PARENT,
                 LinearLayout.LayoutParams.WRAP_CONTENT
             )
-        }
-        try {
-            val banner = Banner(this)
-            val bannerParams = FrameLayout.LayoutParams(
-                FrameLayout.LayoutParams.WRAP_CONTENT,
-                FrameLayout.LayoutParams.WRAP_CONTENT,
-                Gravity.CENTER_HORIZONTAL
-            )
-            bannerHolder.addView(banner, bannerParams)
-        } catch (_: Exception) {
-            // تجاهل
         }
         topBannerContainer = bannerHolder
 
@@ -341,17 +328,38 @@ class MainActivity : AppCompatActivity() {
             runOnUiThread {
                 val now = System.currentTimeMillis()
                 if (now - lastInterstitialShownAt < 120_000L) return@runOnUiThread
+                if (!isInterstitialLoaded) {
+                    loadUnityInterstitial()
+                    return@runOnUiThread
+                }
                 try {
-                    val ad = interstitialAd ?: StartAppAd(this@MainActivity)
-                    if (ad.isReady) {
-                        lastInterstitialShownAt = now
-                        ad.showAd()
-                        interstitialAd = StartAppAd(this@MainActivity).also { it.loadAd() }
-                    } else {
-                        ad.loadAd()
-                    }
+                    lastInterstitialShownAt = now
+                    isInterstitialLoaded = false
+                    UnityAds.show(
+                        this@MainActivity,
+                        UNITY_INTERSTITIAL_ID,
+                        UnityAdsShowOptions(),
+                        object : IUnityAdsShowListener {
+                            override fun onUnityAdsShowFailure(
+                                placementId: String?,
+                                error: UnityAds.UnityAdsShowError?,
+                                message: String?
+                            ) {
+                                loadUnityInterstitial()
+                            }
+
+                            override fun onUnityAdsShowStart(placementId: String?) {}
+                            override fun onUnityAdsShowClick(placementId: String?) {}
+                            override fun onUnityAdsShowComplete(
+                                placementId: String?,
+                                state: UnityAds.UnityAdsShowCompletionState?
+                            ) {
+                                loadUnityInterstitial()
+                            }
+                        }
+                    )
                 } catch (_: Exception) {
-                    // تجاهل
+                    loadUnityInterstitial()
                 }
             }
         }
@@ -368,22 +376,40 @@ class MainActivity : AppCompatActivity() {
                         )
                     }
                 }
+                if (!isRewardedLoaded) {
+                    loadUnityRewarded()
+                    deliverReward()
+                    return@runOnUiThread
+                }
                 try {
-                    val rewarded = StartAppAd(this@MainActivity)
-                    rewarded.setVideoListener {
-                        deliverReward()
-                    }
-                    rewarded.loadAd(StartAppAd.AdMode.REWARDED_VIDEO, object : AdEventListener {
-                        override fun onReceiveAd(ad: Ad) {
-                            rewarded.showAd()
-                        }
+                    isRewardedLoaded = false
+                    UnityAds.show(
+                        this@MainActivity,
+                        UNITY_REWARDED_ID,
+                        UnityAdsShowOptions(),
+                        object : IUnityAdsShowListener {
+                            override fun onUnityAdsShowFailure(
+                                placementId: String?,
+                                error: UnityAds.UnityAdsShowError?,
+                                message: String?
+                            ) {
+                                loadUnityRewarded()
+                                deliverReward()
+                            }
 
-                        override fun onFailedToReceiveAd(ad: Ad?) {
-                            // إذا لم يتوفر فيديو مكافأة حالياً لا نوقف المستخدم عن التحميل
-                            deliverReward()
+                            override fun onUnityAdsShowStart(placementId: String?) {}
+                            override fun onUnityAdsShowClick(placementId: String?) {}
+                            override fun onUnityAdsShowComplete(
+                                placementId: String?,
+                                state: UnityAds.UnityAdsShowCompletionState?
+                            ) {
+                                loadUnityRewarded()
+                                deliverReward()
+                            }
                         }
-                    })
+                    )
                 } catch (_: Exception) {
+                    loadUnityRewarded()
                     deliverReward()
                 }
             }
@@ -453,9 +479,101 @@ class MainActivity : AppCompatActivity() {
         }
     }
 
+    private fun initUnityAds() {
+        if (UNITY_GAME_ID.isBlank() || UNITY_GAME_ID == "REPLACE_WITH_YOUR_UNITY_GAME_ID") return
+        try {
+            UnityAds.initialize(
+                this,
+                UNITY_GAME_ID,
+                UNITY_TEST_MODE,
+                object : IUnityAdsInitializationListener {
+                    override fun onInitializationComplete() {
+                        runOnUiThread {
+                            loadUnityBanner()
+                            loadUnityInterstitial()
+                            loadUnityRewarded()
+                        }
+                    }
+
+                    override fun onInitializationFailed(
+                        error: UnityAds.UnityAdsInitializationError?,
+                        message: String?
+                    ) {
+                        // تجاهل
+                    }
+                }
+            )
+        } catch (_: Exception) {
+            // تجاهل
+        }
+    }
+
+    private fun loadUnityBanner() {
+        val holder = topBannerContainer ?: return
+        try {
+            unityBannerView?.destroy()
+            val banner = BannerView(this, UNITY_BANNER_ID, UnityBannerSize(320, 50))
+            unityBannerView = banner
+            holder.removeAllViews()
+            val params = FrameLayout.LayoutParams(
+                FrameLayout.LayoutParams.WRAP_CONTENT,
+                FrameLayout.LayoutParams.WRAP_CONTENT,
+                Gravity.CENTER_HORIZONTAL
+            )
+            holder.addView(banner, params)
+            banner.load()
+        } catch (_: Exception) {
+            // تجاهل
+        }
+    }
+
+    private fun loadUnityInterstitial() {
+        try {
+            UnityAds.load(UNITY_INTERSTITIAL_ID, object : IUnityAdsLoadListener {
+                override fun onUnityAdsAdLoaded(placementId: String?) {
+                    isInterstitialLoaded = true
+                }
+
+                override fun onUnityAdsFailedToLoad(
+                    placementId: String?,
+                    error: UnityAds.UnityAdsLoadError?,
+                    message: String?
+                ) {
+                    isInterstitialLoaded = false
+                }
+            })
+        } catch (_: Exception) {
+            // تجاهل
+        }
+    }
+
+    private fun loadUnityRewarded() {
+        try {
+            UnityAds.load(UNITY_REWARDED_ID, object : IUnityAdsLoadListener {
+                override fun onUnityAdsAdLoaded(placementId: String?) {
+                    isRewardedLoaded = true
+                }
+
+                override fun onUnityAdsFailedToLoad(
+                    placementId: String?,
+                    error: UnityAds.UnityAdsLoadError?,
+                    message: String?
+                ) {
+                    isRewardedLoaded = false
+                }
+            })
+        } catch (_: Exception) {
+            // تجاهل
+        }
+    }
+
     companion object {
         private const val ASSET_HOST = "appassets.androidplatform.net"
-        private const val START_IO_APP_ID = "210645029"
+        private const val UNITY_GAME_ID = "800458205"
+        private const val UNITY_TEST_MODE = false
+        private const val UNITY_BANNER_ID = "BP_Banner_Android"
+        private const val UNITY_INTERSTITIAL_ID = "BP_Interstitial_Android"
+        private const val UNITY_REWARDED_ID = "BP_Rewarded_Android"
     }
 }
 
