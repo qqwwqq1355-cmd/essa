@@ -97,5 +97,5 @@ dependencies {
     implementation("androidx.media:media:1.7.0")
     implementation(platform("com.google.firebase:firebase-bom:33.7.0"))
     implementation("com.google.firebase:firebase-messaging-ktx")
-    implementation("com.startapp:inapp-sdk:5.+")
+    implementation("com.startapp:inapp-sdk:5.1.0")
 }
